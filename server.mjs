@@ -15,8 +15,20 @@ const openRouterBase = "https://openrouter.ai/api/v1";
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20mb", strict: true }));
 
-function hasApiKey() {
-  return Boolean(String(process.env.OPENROUTER_API_KEY || "").trim());
+function normalizeApiKey(raw) {
+  let key = String(raw || "").trim();
+  key = key.replace(/^Bearer\s+/i, "").trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+  return key;
+}
+
+function requestApiKey(req) {
+  return normalizeApiKey(req.get("x-openrouter-key"));
 }
 
 function redactSecrets(value) {
@@ -47,27 +59,25 @@ function parseErrorBody(text, status) {
   };
 }
 
-function sendServerConfigurationError(res) {
-  return res.status(503).json({
+function sendMissingClientKeyError(res) {
+  return res.status(401).json({
     error: {
-      message:
-        "Render 側に OPENROUTER_API_KEY が設定されていません。Environment Variables を確認してください。",
-      code: "missing_api_key",
+      message: "APIキーが入力されていません。設定画面から各自の OpenRouter APIキーを入力してください。",
+      code: "missing_client_api_key",
     },
     proxy: true,
   });
 }
 
-async function openRouterFetch(endpoint, init = {}) {
-  const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
+async function openRouterFetch(endpoint, apiKey, init = {}) {
   return fetch(`${openRouterBase}${endpoint}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.PUBLIC_APP_URL || "https://onrender.com",
       "X-Title": "Nemotron Workspace",
       ...(init.headers || {}),
+      Authorization: `Bearer ${apiKey}`,
     },
     signal: init.signal || AbortSignal.timeout(120000),
   });
@@ -77,15 +87,17 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     proxy: true,
-    configured: hasApiKey(),
+    keyMode: "per_user",
+    acceptsClientKey: true,
     model,
     service: "Nemotron Workspace",
   });
 });
 
 app.post("/api/chat", async (req, res) => {
-  if (!hasApiKey()) {
-    return sendServerConfigurationError(res);
+  const apiKey = requestApiKey(req);
+  if (!apiKey) {
+    return sendMissingClientKeyError(res);
   }
 
   if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
@@ -102,7 +114,7 @@ app.post("/api/chat", async (req, res) => {
   };
 
   try {
-    const upstream = await openRouterFetch("/chat/completions", {
+    const upstream = await openRouterFetch("/chat/completions", apiKey, {
       method: "POST",
       body: JSON.stringify(forwardedBody),
     });
@@ -151,16 +163,23 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-async function diagnosticRequest(endpoint, init) {
+async function diagnosticRequest(endpoint, apiKey, init) {
   try {
-    const response = await openRouterFetch(endpoint, {
+    const response = await openRouterFetch(endpoint, apiKey, {
       ...init,
       signal: AbortSignal.timeout(30000),
     });
     const text = await response.text();
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Keep the plain response in detail below.
+    }
     return {
       ok: response.ok,
       httpStatus: response.status,
+      data,
       detail: response.ok
         ? "OpenRouter から正常な応答を受信しました。"
         : parseErrorBody(text, response.status).message,
@@ -176,30 +195,44 @@ async function diagnosticRequest(endpoint, init) {
   }
 }
 
-app.post("/api/diagnostics", async (_req, res) => {
-  if (!hasApiKey()) {
-    return res.status(503).json({
+app.post("/api/key-check", async (req, res) => {
+  const apiKey = requestApiKey(req);
+  if (!apiKey) {
+    return sendMissingClientKeyError(res);
+  }
+
+  const check = await diagnosticRequest("/key", apiKey, { method: "GET" });
+  const payload = { ok: check.ok, data: check.data };
+  if (!check.ok) {
+    payload.error = { message: check.detail, code: "upstream_error" };
+  }
+  return res.status(check.ok ? 200 : check.httpStatus || 502).json(payload);
+});
+
+app.post("/api/diagnostics", async (req, res) => {
+  const apiKey = requestApiKey(req);
+  if (!apiKey) {
+    return res.json({
       ok: false,
       model,
       steps: [
         {
-          id: "config",
-          label: "Render 環境変数",
+          id: "client-key",
+          label: "APIキー入力",
           ok: false,
           httpStatus: null,
-          detail:
-            "OPENROUTER_API_KEY が未設定です。Render の Environment Variables に追加してください。",
+          detail: "設定画面からAPIキーを入力してください。",
         },
       ],
     });
   }
 
   const steps = [];
-  const keyCheck = await diagnosticRequest("/key", { method: "GET" });
+  const keyCheck = await diagnosticRequest("/key", apiKey, { method: "GET" });
   steps.push({ id: "key", label: "APIキー認証", ...keyCheck });
 
   if (keyCheck.ok) {
-    const generation = await diagnosticRequest("/chat/completions", {
+    const generation = await diagnosticRequest("/chat/completions", apiKey, {
       method: "POST",
       body: JSON.stringify({
         model,
@@ -211,7 +244,7 @@ app.post("/api/diagnostics", async (_req, res) => {
     });
     steps.push({ id: "generation", label: "最小生成", ...generation });
 
-    const toolCalling = await diagnosticRequest("/chat/completions", {
+    const toolCalling = await diagnosticRequest("/chat/completions", apiKey, {
       method: "POST",
       body: JSON.stringify({
         model,
