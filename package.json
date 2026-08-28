@@ -1,0 +1,18 @@
+{
+  "name": "nemotron-workspace",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nemotron Workspace served by a Render-ready OpenRouter proxy",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "check": "node --check server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

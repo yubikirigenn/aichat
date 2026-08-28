@@ -1,0 +1,1094 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Nemotron Workspace</title>
+  <style>
+    :root {
+      --bg: #09111f;
+      --panel: #0e1a2d;
+      --panel-2: #12223a;
+      --panel-3: #172b48;
+      --border: rgba(164, 191, 232, .16);
+      --border-strong: rgba(164, 191, 232, .29);
+      --text: #e7efff;
+      --muted: #8fa4c7;
+      --faint: #64799c;
+      --accent: #7c9cff;
+      --accent-2: #65e6c0;
+      --warning: #f2c772;
+      --danger: #ff8d9b;
+      --shadow: 0 22px 70px rgba(0, 0, 0, .28);
+      --radius: 16px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body.light {
+      --bg: #eef3fb;
+      --panel: #ffffff;
+      --panel-2: #f4f7fc;
+      --panel-3: #e8eef8;
+      --border: rgba(43, 69, 111, .14);
+      --border-strong: rgba(43, 69, 111, .28);
+      --text: #17263e;
+      --muted: #617495;
+      --faint: #8a9ab4;
+      --shadow: 0 22px 70px rgba(43, 69, 111, .13);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% -20%, rgba(90, 124, 220, .18), transparent 34%), var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    button, input, textarea, select { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .app-shell { height: 100%; display: flex; flex-direction: column; }
+
+    .topbar {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(9, 17, 31, .72);
+      backdrop-filter: blur(18px);
+      flex: 0 0 auto;
+    }
+    body.light .topbar { background: rgba(255, 255, 255, .78); }
+    .brand { display: flex; gap: 11px; align-items: center; min-width: 0; }
+    .brand-mark {
+      width: 36px; height: 36px; border-radius: 12px;
+      display: grid; place-items: center;
+      color: #fff; font-weight: 800; letter-spacing: -.08em;
+      background: linear-gradient(135deg, #819dff, #5765d7 58%, #4edbb7);
+      box-shadow: 0 8px 26px rgba(99, 117, 235, .3);
+    }
+    .brand-title { display: block; font-size: 15px; font-weight: 760; letter-spacing: -.02em; }
+    .brand-subtitle { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .icon-button, .ghost-button, .primary-button, .small-button {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--panel-2);
+      cursor: pointer;
+      transition: .16s ease;
+    }
+    .icon-button:hover, .ghost-button:hover, .small-button:hover { border-color: var(--border-strong); background: var(--panel-3); }
+    .icon-button { width: 36px; height: 36px; display: grid; place-items: center; font-size: 16px; }
+    .ghost-button { padding: 9px 12px; color: var(--muted); font-size: 12px; }
+    .small-button { padding: 7px 9px; color: var(--muted); font-size: 11px; }
+    .primary-button {
+      border-color: transparent; padding: 10px 14px; color: #fff; font-weight: 700; font-size: 12px;
+      background: linear-gradient(135deg, #6d83f4, #5060c7);
+      box-shadow: 0 8px 24px rgba(85, 105, 212, .25);
+    }
+    .primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .primary-button:disabled, .ghost-button:disabled, .small-button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+    .main-grid {
+      min-height: 0; flex: 1; display: grid; grid-template-columns: 252px minmax(0, 1fr) 276px;
+    }
+    .sidebar, .inspector { min-height: 0; background: rgba(14, 26, 45, .64); }
+    body.light .sidebar, body.light .inspector { background: rgba(255, 255, 255, .65); }
+    .sidebar { display: flex; flex-direction: column; border-right: 1px solid var(--border); padding: 16px 12px 12px; }
+    .new-chat { width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 16px; }
+    .nav-list { display: grid; gap: 4px; margin-bottom: 18px; }
+    .nav-button {
+      display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 11px;
+      border: 1px solid transparent; border-radius: 11px; background: transparent; color: var(--muted);
+      cursor: pointer; text-align: left; font-size: 12px;
+    }
+    .nav-button:hover { background: var(--panel-2); color: var(--text); }
+    .nav-button.active { background: rgba(117, 143, 255, .13); border-color: rgba(117, 143, 255, .2); color: var(--text); }
+    .nav-icon { width: 18px; text-align: center; font-size: 14px; }
+    .section-label { display: flex; align-items: center; justify-content: space-between; padding: 0 10px 8px; color: var(--faint); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .chat-list { min-height: 0; overflow: auto; display: grid; align-content: start; gap: 4px; }
+    .chat-item { position: relative; display: block; width: 100%; padding: 10px 28px 10px 10px; border: 1px solid transparent; border-radius: 11px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
+    .chat-item:hover { background: var(--panel-2); color: var(--text); }
+    .chat-item.active { background: var(--panel-2); border-color: var(--border); color: var(--text); }
+    .chat-item-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .chat-item-meta { display: block; margin-top: 4px; color: var(--faint); font-size: 10px; }
+    .delete-chat { position: absolute; right: 7px; top: 9px; width: 20px; height: 20px; border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer; opacity: 0; }
+    .chat-item:hover .delete-chat, .chat-item.active .delete-chat { opacity: 1; }
+    .delete-chat:hover { background: rgba(255, 141, 155, .12); color: var(--danger); }
+    .sidebar-footer { margin-top: auto; padding: 12px 9px 3px; border-top: 1px solid var(--border); }
+    .server-mini { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); box-shadow: 0 0 0 4px rgba(143, 164, 199, .08); }
+    .status-dot.ok { background: var(--accent-2); box-shadow: 0 0 0 4px rgba(101, 230, 192, .1); }
+    .status-dot.warn { background: var(--warning); box-shadow: 0 0 0 4px rgba(242, 199, 114, .1); }
+    .status-dot.error { background: var(--danger); box-shadow: 0 0 0 4px rgba(255, 141, 155, .1); }
+    .sidebar-note { display: block; margin-top: 7px; color: var(--faint); font-size: 10px; line-height: 1.45; }
+
+    .content { min-width: 0; min-height: 0; position: relative; display: flex; flex-direction: column; background: rgba(9, 17, 31, .35); }
+    body.light .content { background: rgba(238, 243, 251, .35); }
+    .view { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+    .view[hidden] { display: none; }
+    .conversation-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 24px 14px; border-bottom: 1px solid var(--border); }
+    .view-heading { min-width: 0; }
+    .view-heading h1 { margin: 0; font-size: 16px; letter-spacing: -.03em; }
+    .view-heading p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .head-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+    .model-chip, .metric-chip, .tag {
+      display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 999px; padding: 6px 9px; color: var(--muted); font-size: 10px; white-space: nowrap;
+      background: var(--panel-2);
+    }
+    .model-chip { color: var(--accent-2); border-color: rgba(101, 230, 192, .2); background: rgba(101, 230, 192, .06); }
+    .metric-chip strong { color: var(--text); font-weight: 700; }
+    .messages { min-height: 0; flex: 1; overflow: auto; padding: 24px max(24px, calc((100% - 860px) / 2)); scroll-behavior: smooth; }
+    .empty-state { max-width: 680px; margin: 7vh auto 0; text-align: center; }
+    .empty-orb { width: 68px; height: 68px; margin: 0 auto 18px; display: grid; place-items: center; border: 1px solid rgba(126, 154, 255, .32); border-radius: 22px; color: #b8c7ff; font-size: 28px; background: radial-gradient(circle at 30% 25%, rgba(149, 170, 255, .28), rgba(91, 104, 202, .14)); box-shadow: 0 18px 52px rgba(84, 103, 209, .24); }
+    .empty-state h2 { margin: 0; font-size: 26px; letter-spacing: -.05em; }
+    .empty-state p { max-width: 520px; margin: 10px auto 24px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; text-align: left; }
+    .suggestion { min-height: 66px; padding: 12px; border: 1px solid var(--border); border-radius: 13px; background: var(--panel-2); color: var(--muted); cursor: pointer; text-align: left; font-size: 11px; line-height: 1.5; transition: .16s ease; }
+    .suggestion:hover { transform: translateY(-2px); border-color: var(--border-strong); color: var(--text); box-shadow: var(--shadow); }
+    .suggestion strong { display: block; margin-bottom: 4px; color: var(--text); font-size: 12px; }
+    .message-row { display: flex; gap: 11px; max-width: 860px; margin: 0 auto 22px; align-items: flex-start; }
+    .message-row.user { flex-direction: row-reverse; }
+    .avatar { width: 29px; height: 29px; flex: 0 0 29px; display: grid; place-items: center; border-radius: 10px; color: #fff; font-size: 11px; font-weight: 800; background: linear-gradient(135deg, #657df2, #4b5aba); }
+    .message-row.user .avatar { background: linear-gradient(135deg, #3d846f, #286456); }
+    .message-card { min-width: 0; max-width: calc(100% - 42px); }
+    .user .message-card { padding: 11px 13px; border: 1px solid rgba(101, 230, 192, .14); border-radius: 14px 4px 14px 14px; background: rgba(101, 230, 192, .08); }
+    .assistant .message-card { flex: 1; }
+    .message-meta { display: flex; align-items: center; gap: 7px; min-height: 18px; margin-bottom: 6px; color: var(--faint); font-size: 10px; }
+    .user .message-meta { justify-content: flex-end; }
+    .message-actions { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: .16s ease; }
+    .message-card:hover .message-actions { opacity: 1; }
+    .message-actions button { border: 0; border-radius: 5px; padding: 2px 5px; background: transparent; color: var(--faint); cursor: pointer; font-size: 10px; }
+    .message-actions button:hover { background: var(--panel-3); color: var(--text); }
+    .message-body { color: var(--text); font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+    .message-body > :first-child { margin-top: 0; }
+    .message-body > :last-child { margin-bottom: 0; }
+    .message-body p { margin: 0 0 10px; }
+    .message-body h1, .message-body h2, .message-body h3 { margin: 18px 0 8px; line-height: 1.35; letter-spacing: -.03em; }
+    .message-body h1 { font-size: 20px; }.message-body h2 { font-size: 17px; }.message-body h3 { font-size: 14px; }
+    .message-body ul, .message-body ol { margin: 6px 0 12px; padding-left: 22px; }
+    .message-body li { margin: 3px 0; }
+    .message-body blockquote { margin: 10px 0; padding: 5px 12px; border-left: 3px solid var(--accent); color: var(--muted); background: rgba(124, 156, 255, .06); }
+    .message-body code { padding: 2px 5px; border-radius: 5px; color: #b9ccff; background: rgba(125, 153, 255, .11); font-family: var(--mono); font-size: .9em; }
+    .message-body pre { margin: 11px 0; padding: 13px; overflow: auto; border: 1px solid var(--border); border-radius: 11px; background: #07101d; }
+    body.light .message-body pre { background: #edf2fa; }
+    .message-body pre code { padding: 0; color: #c9d7f8; background: transparent; font-size: 11px; line-height: 1.6; }
+    body.light .message-body pre code { color: #273b5b; }
+    .message-body a { color: #9db3ff; text-decoration: underline; text-underline-offset: 2px; }
+    .message-body table { width: 100%; margin: 12px 0; border-collapse: collapse; overflow: hidden; font-size: 11px; }
+    .message-body th, .message-body td { padding: 7px 9px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+    .message-body th { color: var(--text); background: var(--panel-2); }
+    .thinking { margin: 0 0 12px; border: 1px solid rgba(124, 156, 255, .2); border-radius: 12px; background: rgba(124, 156, 255, .06); overflow: hidden; }
+    .thinking summary { display: flex; align-items: center; gap: 8px; padding: 9px 11px; color: #afc0ff; cursor: pointer; list-style: none; font-size: 11px; font-weight: 700; }
+    .thinking summary::-webkit-details-marker { display: none; }
+    .thinking summary::before { content: "›"; display: inline-block; font-size: 17px; line-height: 10px; transform: rotate(0deg); transition: .15s ease; }
+    .thinking[open] summary::before { transform: rotate(90deg); }
+    .thinking-status { margin-left: auto; color: var(--faint); font-size: 10px; font-weight: 500; }
+    .thinking-text { max-height: 280px; margin: 0; padding: 0 12px 12px; overflow: auto; color: var(--muted); white-space: pre-wrap; font-family: var(--mono); font-size: 11px; line-height: 1.65; }
+    .thinking-text:empty::after { content: "推論を受信しています…"; color: var(--faint); }
+    .citations { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .citation { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--panel-2); font-size: 10px; text-decoration: none; }
+    .citation:hover { color: var(--text); border-color: var(--border-strong); }
+    .chart-card { margin: 12px 0; padding: 10px; border: 1px solid var(--border); border-radius: 13px; background: rgba(18, 34, 58, .72); overflow: auto; }
+    body.light .chart-card { background: #f6f8fc; }
+    .chart-label { display: flex; align-items: center; gap: 6px; margin: 1px 3px 7px; color: var(--muted); font-size: 10px; }
+    .chart-label span { color: var(--accent-2); }
+    .chart-card svg { display: block; width: 100%; min-width: 440px; height: auto; }
+    .activity-strip { display: none; max-height: 112px; overflow: auto; margin: 0 max(24px, calc((100% - 860px) / 2)); padding: 9px 11px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); }
+    .activity-strip.visible { display: block; }
+    .activity-line { display: flex; gap: 8px; align-items: center; padding: 4px 0; color: var(--muted); font-size: 10px; }
+    .activity-line strong { color: var(--text); font-weight: 650; }
+    .activity-line .activity-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
+    .activity-icon { width: 15px; text-align: center; }
+    .activity-icon.done { color: var(--accent-2); }.activity-icon.running { color: var(--accent); }.activity-icon.failed { color: var(--danger); }.activity-icon.waiting { color: var(--warning); }
+    .composer-wrap { padding: 13px max(24px, calc((100% - 860px) / 2)) 18px; }
+    .composer { position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 8px; border: 1px solid var(--border-strong); border-radius: 15px; background: var(--panel-2); box-shadow: 0 12px 32px rgba(0, 0, 0, .13); }
+    .composer textarea { min-height: 38px; max-height: 180px; flex: 1; resize: none; padding: 8px 9px; border: 0; outline: none; color: var(--text); background: transparent; font-size: 13px; line-height: 1.5; }
+    .composer textarea::placeholder { color: var(--faint); }
+    .send-button { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border: 0; border-radius: 10px; color: #fff; background: linear-gradient(135deg, #7189f8, #5365cf); cursor: pointer; }
+    .send-button:disabled { opacity: .38; cursor: not-allowed; }
+    .composer-hint { display: flex; justify-content: space-between; margin-top: 7px; color: var(--faint); font-size: 10px; }
+
+    .inspector { display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow: auto; }
+    .inspector-header { padding: 17px 16px 12px; border-bottom: 1px solid var(--border); }
+    .inspector-header h2 { margin: 0; font-size: 13px; letter-spacing: -.02em; }
+    .inspector-header p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .inspector-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .inspector-section h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .inspector-section h3 span { color: var(--faint); font-size: 10px; letter-spacing: 0; text-transform: none; }
+    .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+    .stat { padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+    .stat small { display: block; color: var(--faint); font-size: 9px; }.stat strong { display: block; margin-top: 4px; font-size: 13px; }
+    .mini-plan { display: grid; gap: 7px; }
+    .mini-step { display: flex; gap: 8px; align-items: flex-start; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .mini-step-mark { width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; color: var(--faint); font-size: 9px; }
+    .mini-step.done .mini-step-mark { border-color: rgba(101, 230, 192, .28); color: var(--accent-2); background: rgba(101, 230, 192, .08); }
+    .mini-step.running .mini-step-mark { border-color: rgba(124, 156, 255, .28); color: var(--accent); background: rgba(124, 156, 255, .08); }
+    .tool-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tool-summary .tag { font-size: 9px; padding: 5px 7px; }
+    .muted-block { color: var(--faint); font-size: 10px; line-height: 1.6; }
+
+    .plan-head, .playground-head, .activity-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 24px 14px; border-bottom: 1px solid var(--border); }
+    .plan-content, .activity-content { min-height: 0; flex: 1; overflow: auto; padding: 24px max(24px, calc((100% - 860px) / 2)); }
+    .plan-summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 15px; background: var(--panel-2); }
+    .plan-summary h2 { margin: 0; font-size: 18px; }.plan-summary p { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+    .progress-ring { width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; border: 6px solid rgba(124, 156, 255, .15); border-top-color: var(--accent); border-radius: 50%; color: var(--text); font-size: 11px; font-weight: 700; }
+    .plan-steps { display: grid; gap: 8px; }
+    .plan-step { display: grid; grid-template-columns: 28px 1fr auto; gap: 11px; align-items: start; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: var(--panel-2); }
+    .plan-step-number { width: 27px; height: 27px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; color: var(--muted); font-size: 11px; }
+    .plan-step.done .plan-step-number { border-color: rgba(101, 230, 192, .3); color: var(--accent-2); background: rgba(101, 230, 192, .07); }
+    .plan-step.running .plan-step-number { border-color: rgba(124, 156, 255, .3); color: var(--accent); background: rgba(124, 156, 255, .08); }
+    .plan-step h3 { margin: 1px 0 4px; font-size: 12px; }.plan-step p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .step-status { padding: 5px 7px; border-radius: 999px; color: var(--faint); background: var(--panel-3); font-size: 9px; white-space: nowrap; }
+    .step-status.done { color: var(--accent-2); background: rgba(101, 230, 192, .08); }.step-status.running { color: var(--accent); background: rgba(124, 156, 255, .09); }
+    .activity-content { max-width: 980px; width: 100%; margin: 0 auto; }
+    .activity-card { display: grid; grid-template-columns: 28px 1fr auto; gap: 11px; align-items: start; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: var(--panel-2); }
+    .activity-card + .activity-card { margin-top: 8px; }.activity-card-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; background: var(--panel-3); }
+    .activity-card h3 { margin: 1px 0 4px; font-size: 12px; }.activity-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }.activity-time { color: var(--faint); font-size: 9px; }
+
+    .playground-body { min-height: 0; flex: 1; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+    .file-panel { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+    .file-toolbar { display: flex; gap: 6px; padding: 11px; border-bottom: 1px solid var(--border); }
+    .file-toolbar button { flex: 1; }.file-list { min-height: 0; overflow: auto; padding: 8px; }
+    .file-item { display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 8px; border: 1px solid transparent; border-radius: 9px; color: var(--muted); background: transparent; cursor: pointer; text-align: left; }
+    .file-item:hover { background: var(--panel-2); color: var(--text); }.file-item.active { border-color: var(--border); color: var(--text); background: var(--panel-2); }
+    .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 10px; }.file-size { margin-left: auto; color: var(--faint); font-size: 9px; }
+    .editor-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .editor-toolbar { display: flex; align-items: center; gap: 6px; padding: 11px 13px; border-bottom: 1px solid var(--border); }
+    .editor-path { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+    #editor { min-height: 0; flex: 1; width: 100%; resize: none; padding: 18px; border: 0; outline: none; color: #c9d7f8; background: #07101d; font-family: var(--mono); font-size: 12px; line-height: 1.7; tab-size: 2; }
+    body.light #editor { color: #263c5e; background: #f8faff; }
+    .editor-footer { display: flex; justify-content: space-between; padding: 8px 13px; border-top: 1px solid var(--border); color: var(--faint); font-size: 10px; }
+
+    dialog { width: min(540px, calc(100% - 28px)); max-height: min(720px, calc(100% - 28px)); padding: 0; border: 1px solid var(--border-strong); border-radius: 18px; color: var(--text); background: var(--panel); box-shadow: var(--shadow); }
+    dialog::backdrop { background: rgba(2, 7, 15, .65); backdrop-filter: blur(5px); }
+    .dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 19px 20px 14px; border-bottom: 1px solid var(--border); }
+    .dialog-head h2 { margin: 0; font-size: 16px; }.dialog-head p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .dialog-body { overflow: auto; padding: 17px 20px 20px; }.dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 18px; }
+    .setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.setting { min-width: 0; }.setting.full { grid-column: 1 / -1; }
+    .setting label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 10px; }.setting input, .setting select { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; outline: none; color: var(--text); background: var(--panel-2); font-size: 11px; }
+    .setting input[type="range"] { padding: 0; accent-color: var(--accent); }.setting small { display: block; margin-top: 5px; color: var(--faint); font-size: 9px; line-height: 1.45; }
+    .toggle-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }.toggle-line span { color: var(--muted); font-size: 11px; }.toggle-line input { width: 17px; height: 17px; accent-color: var(--accent); }
+    .security-note { margin-top: 14px; padding: 10px 11px; border: 1px solid rgba(242, 199, 114, .2); border-radius: 10px; color: var(--warning); background: rgba(242, 199, 114, .06); font-size: 10px; line-height: 1.55; }
+    .diagnostic-result { display: grid; gap: 7px; margin-top: 12px; }.diagnostic-row { display: grid; grid-template-columns: 18px 92px 1fr; gap: 8px; align-items: start; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); font-size: 10px; }.diagnostic-row strong { font-size: 10px; }.diagnostic-row p { margin: 0; color: var(--muted); line-height: 1.4; }.diagnostic-ok { color: var(--accent-2); }.diagnostic-fail { color: var(--danger); }.diagnostic-skip { color: var(--faint); }
+    .toast { position: fixed; right: 18px; bottom: 18px; z-index: 20; max-width: 360px; padding: 11px 13px; border: 1px solid var(--border-strong); border-radius: 11px; color: var(--text); background: var(--panel-2); box-shadow: var(--shadow); font-size: 11px; opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s ease; }.toast.show { opacity: 1; transform: translateY(0); }
+    .hidden-input { display: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid rgba(124, 156, 255, .22); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }.empty-copy { color: var(--faint); font-size: 11px; line-height: 1.6; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 1120px) { .main-grid { grid-template-columns: 220px minmax(0, 1fr); }.inspector { display: none; } }
+    @media (max-width: 760px) {
+      body { overflow: auto; }.topbar { height: 60px; padding: 0 12px; }.brand-subtitle { display: none; }.top-actions .ghost-button { display: none; }
+      .main-grid { min-height: calc(100vh - 60px); display: block; }.sidebar { display: none; }.content { min-height: calc(100vh - 60px); }
+      .conversation-head, .plan-head, .playground-head, .activity-head { padding: 13px 14px 11px; }.head-actions .metric-chip { display: none; }.messages { padding: 18px 13px; }.composer-wrap { padding: 10px 13px 13px; }.activity-strip { margin: 0 13px; }.empty-state { margin-top: 5vh; }.empty-state h2 { font-size: 23px; }.suggestions { grid-template-columns: 1fr; }.message-row { gap: 8px; margin-bottom: 18px; }.avatar { width: 25px; height: 25px; flex-basis: 25px; border-radius: 8px; font-size: 10px; }.message-card { max-width: calc(100% - 33px); }.plan-content, .activity-content { padding: 16px 13px; }.playground-body { grid-template-columns: 1fr; }.file-panel { max-height: 205px; border-right: 0; border-bottom: 1px solid var(--border); }.file-list { display: flex; overflow-x: auto; gap: 5px; }.file-item { min-width: 150px; }.editor-panel { min-height: 440px; }.setting-grid { grid-template-columns: 1fr; }.setting.full { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">NW</div>
+        <div><span class="brand-title">Nemotron Workspace</span><span class="brand-subtitle">Agentic chat · Playground · Planner</span></div>
+      </div>
+      <div class="top-actions">
+        <button class="ghost-button" id="healthButton" type="button">接続確認</button>
+        <button class="icon-button" id="themeButton" type="button" title="テーマ切替" aria-label="テーマ切替">☾</button>
+        <button class="icon-button" id="settingsButton" type="button" title="設定" aria-label="設定">⚙</button>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <aside class="sidebar">
+        <button class="primary-button new-chat" id="newChatButton" type="button"><span>＋</span> 新しいチャット</button>
+        <nav class="nav-list" aria-label="Workspace views">
+          <button class="nav-button active" data-view="chat" type="button"><span class="nav-icon">◈</span>チャット</button>
+          <button class="nav-button" data-view="plan" type="button"><span class="nav-icon">☷</span>Planner</button>
+          <button class="nav-button" data-view="playground" type="button"><span class="nav-icon">⌘</span>Playground</button>
+          <button class="nav-button" data-view="activity" type="button"><span class="nav-icon">◌</span>Agent Activity</button>
+        </nav>
+        <div class="section-label"><span>Chats</span><span id="chatCount">0</span></div>
+        <div class="chat-list" id="chatList"></div>
+        <div class="sidebar-footer">
+          <div class="server-mini"><span class="status-dot" id="serverDot"></span><span id="serverStatus">Proxy 確認中…</span></div>
+          <span class="sidebar-note">OpenRouter APIキーは Render の OPENROUTER_API_KEY から読み込みます。</span>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="view" id="chatView">
+          <div class="conversation-head">
+            <div class="view-heading"><h1 id="conversationTitle">新しいチャット</h1><p>Nemotron 3 Ultra · Render proxy</p></div>
+            <div class="head-actions">
+              <span class="model-chip">● nemotron-3-ultra</span>
+              <span class="metric-chip">Round <strong id="roundMetric">—</strong></span>
+              <span class="metric-chip">Tokens <strong id="tokenMetric">—</strong></span>
+              <button class="small-button" id="diagnosticsButton" type="button">401診断</button>
+            </div>
+          </div>
+          <div class="messages" id="messages"></div>
+          <div class="activity-strip" id="activityStrip"></div>
+          <div class="composer-wrap">
+            <form class="composer" id="composerForm">
+              <label class="sr-only" for="composerInput">メッセージ</label>
+              <textarea id="composerInput" rows="1" placeholder="Nemotron に依頼する…（Shift + Enter で改行）"></textarea>
+              <button class="send-button" id="sendButton" type="submit" aria-label="送信">➤</button>
+            </form>
+            <div class="composer-hint"><span>IndexedDB Playground とローカル Tool Calling が有効です</span><span id="composerMode">Web Search ON</span></div>
+          </div>
+        </section>
+
+        <section class="view" id="planView" hidden>
+          <div class="plan-head"><div class="view-heading"><h1>Planner</h1><p>重いタスクの計画と進捗</p></div><button class="small-button" id="clearPlanButton" type="button">計画をクリア</button></div>
+          <div class="plan-content" id="planContent"></div>
+        </section>
+
+        <section class="view" id="playgroundView" hidden>
+          <div class="playground-head"><div class="view-heading"><h1>Playground</h1><p>ブラウザ内 IndexedDB ワークスペース</p></div><div class="head-actions"><button class="small-button" id="importFilesButton" type="button">ファイル読込</button><button class="small-button" id="importFolderButton" type="button">フォルダ読込</button><button class="small-button" id="exportWorkspaceButton" type="button">書き出し</button></div></div>
+          <div class="playground-body">
+            <aside class="file-panel"><div class="file-toolbar"><button class="small-button" id="newFileButton" type="button">＋ ファイル</button><button class="small-button" id="downloadFileButton" type="button">↓ DL</button></div><div class="file-list" id="fileList"></div></aside>
+            <section class="editor-panel"><div class="editor-toolbar"><span class="editor-path" id="editorPath">index.html</span><button class="small-button" id="undoFileButton" type="button">↶ 1つ前へ</button><button class="small-button" id="previewFileButton" type="button">プレビュー</button><button class="primary-button" id="saveFileButton" type="button">保存</button></div><textarea id="editor" spellcheck="false" aria-label="ファイルエディタ"></textarea><div class="editor-footer"><span id="editorStatus">読み込み中…</span><span id="workspaceCount">0 files</span></div></section>
+          </div>
+        </section>
+
+        <section class="view" id="activityView" hidden>
+          <div class="activity-head"><div class="view-heading"><h1>Agent Activity</h1><p>このチャットで起きた Tool と状態の履歴</p></div><button class="small-button" id="clearActivityButton" type="button">履歴をクリア</button></div>
+          <div class="activity-content" id="activityContent"></div>
+        </section>
+      </main>
+
+      <aside class="inspector">
+        <div class="inspector-header"><h2>Workspace status</h2><p>推論、計画、ツール実行をここで確認できます。</p></div>
+        <div class="inspector-section"><h3>Run metrics <span id="inspectorRunState">idle</span></h3><div class="stat-grid"><div class="stat"><small>Model</small><strong>Nemotron</strong></div><div class="stat"><small>Rounds</small><strong id="inspectorRounds">—</strong></div><div class="stat"><small>Tokens</small><strong id="inspectorTokens">—</strong></div><div class="stat"><small>Files</small><strong id="inspectorFiles">0</strong></div></div></div>
+        <div class="inspector-section"><h3>Current plan <span id="planProgressText">未作成</span></h3><div class="mini-plan" id="miniPlan"></div></div>
+        <div class="inspector-section"><h3>Tools <span id="toolCount">0 calls</span></h3><div class="tool-summary" id="toolSummary"></div></div>
+        <div class="inspector-section"><h3>Privacy</h3><div class="muted-block">APIキーはブラウザに保存されません。ブラウザは同一オリジンの <code>/api/chat</code> のみを呼び出します。</div></div>
+      </aside>
+    </div>
+  </div>
+
+  <dialog id="settingsDialog">
+    <div class="dialog-head"><div><h2>設定</h2><p>サーバー中継、推論、Web Search の設定</p></div><button class="icon-button" data-close-dialog="settingsDialog" type="button" aria-label="閉じる">×</button></div>
+    <div class="dialog-body">
+      <div class="setting-grid">
+        <div class="setting"><label for="maxRoundsInput">最大 Tool ラウンド</label><input id="maxRoundsInput" type="number" min="1" max="20" step="1"><small>Planner やファイル編集が続く回数の上限です。</small></div>
+        <div class="setting"><label for="temperatureInput">Temperature</label><input id="temperatureInput" type="number" min="0" max="2" step="0.1"><small>低いほど安定、高いほど多様になります。</small></div>
+        <div class="setting"><label for="reasoningInput">Thinking token budget</label><select id="reasoningInput"><option value="0">自動 / モデル既定</option><option value="2048">2,048</option><option value="4096">4,096</option><option value="8192">8,192</option><option value="16384">16,384</option></select><small>OpenRouter の reasoning.max_tokens として送ります。</small></div>
+        <div class="setting"><label for="webResultsInput">Web Search 最大結果数</label><input id="webResultsInput" type="number" min="1" max="10" step="1"><small>Web Search Server Tool の1回あたりの結果数です。</small></div>
+        <div class="setting full"><div class="toggle-line"><span>Web Search / Fetch Server Tool</span><input id="webSearchInput" type="checkbox"></div></div>
+        <div class="setting full"><div class="toggle-line"><span>回答完了後も Agent Activity を保持</span><input id="keepActivityInput" type="checkbox"></div></div>
+      </div>
+      <div class="security-note">APIキー入力欄はありません。Render の <strong>OPENROUTER_API_KEY</strong> を server.mjs だけが読み込みます。キーを HTML、localStorage、IndexedDB に保存しない構成です。</div>
+      <div class="dialog-actions"><button class="ghost-button" id="runDiagnosticsFromSettings" type="button">401診断を実行</button><button class="primary-button" id="saveSettingsButton" type="button">保存</button></div>
+      <div id="diagnosticResult" class="diagnostic-result" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <dialog id="previewDialog">
+    <div class="dialog-head"><div><h2 id="previewTitle">Preview</h2><p>IndexedDB のファイルをブラウザ内で表示</p></div><button class="icon-button" data-close-dialog="previewDialog" type="button" aria-label="閉じる">×</button></div>
+    <div style="height: min(70vh, 620px); padding: 12px;"><iframe id="previewFrame" title="HTML preview" style="width:100%;height:100%;border:1px solid var(--border);border-radius:10px;background:white;"></iframe></div>
+  </dialog>
+
+  <input class="hidden-input" id="fileInput" type="file" multiple>
+  <input class="hidden-input" id="folderInput" type="file" webkitdirectory multiple>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    "use strict";
+
+    const MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+    const CHAT_STORAGE = "nemotron-workspace-chats-v2";
+    const SETTINGS_STORAGE = "nemotron-workspace-settings-v2";
+    const THEME_STORAGE = "nemotron-workspace-theme";
+    const DB_NAME = "nemotron-workspace-db";
+    const DB_VERSION = 1;
+    const palette = ["#7c9cff", "#65e6c0", "#f2c772", "#ff8d9b", "#c6a6ff", "#68c6f4"];
+    const defaultSettings = { maxRounds: 8, temperature: 0.2, reasoningMaxTokens: 8192, webSearch: true, webResults: 5, keepActivity: true };
+    const state = {
+      chats: [], activeChatId: null, view: "chat", settings: { ...defaultSettings },
+      workspaceFiles: [], editorPath: "index.html", editorValue: "", editorDirty: false,
+      plan: null, activities: [], run: null, server: { ok: false, configured: false },
+    };
+    let dbPromise;
+    let toastTimer;
+    let currentAbort;
+
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => [...document.querySelectorAll(selector)];
+    const uid = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    }
+
+    function safeJson(value, fallback = {}) {
+      if (value && typeof value === "object") return value;
+      try { return JSON.parse(String(value || "{}")); } catch { return fallback; }
+    }
+
+    function formatTime(timestamp) {
+      return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp));
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    }
+
+    function showToast(message, duration = 3500) {
+      const element = $("#toast");
+      element.textContent = message;
+      element.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => element.classList.remove("show"), duration);
+    }
+
+    function loadSettings() {
+      try { return { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_STORAGE) || "{}")) }; } catch { return { ...defaultSettings }; }
+    }
+
+    function saveSettings() {
+      localStorage.setItem(SETTINGS_STORAGE, JSON.stringify(state.settings));
+    }
+
+    function normalizePersistedMessage(message) {
+      return {
+        id: message.id || uid("message"), role: message.role || "assistant", content: message.content || "",
+        reasoning: message.reasoning || "", reasoning_details: Array.isArray(message.reasoning_details) ? message.reasoning_details : [],
+        annotations: Array.isArray(message.annotations) ? message.annotations.slice(0, 50) : [],
+        charts: Array.isArray(message.charts) ? message.charts.slice(0, 8) : [], createdAt: message.createdAt || Date.now(),
+        usage: message.usage || null,
+      };
+    }
+
+    function loadChats() {
+      try {
+        const chats = JSON.parse(localStorage.getItem(CHAT_STORAGE) || "[]");
+        if (!Array.isArray(chats)) return [];
+        return chats.map((chat) => ({ id: chat.id || uid("chat"), title: chat.title || "新しいチャット", createdAt: chat.createdAt || Date.now(), updatedAt: chat.updatedAt || Date.now(), messages: Array.isArray(chat.messages) ? chat.messages.map(normalizePersistedMessage) : [] }));
+      } catch { return []; }
+    }
+
+    function saveChats() {
+      const compact = state.chats.map((chat) => ({ ...chat, messages: chat.messages.slice(-80).map((message) => ({ ...message, content: String(message.content || "").slice(0, 120000), reasoning: String(message.reasoning || "").slice(0, 60000), charts: (message.charts || []).slice(0, 8) })) }));
+      try { localStorage.setItem(CHAT_STORAGE, JSON.stringify(compact)); } catch { showToast("チャット履歴の保存容量を超えたため、古い履歴を短縮しました。", 5000); }
+    }
+
+    function newChatObject() { return { id: uid("chat"), title: "新しいチャット", createdAt: Date.now(), updatedAt: Date.now(), messages: [] }; }
+    function activeChat() { return state.chats.find((chat) => chat.id === state.activeChatId) || null; }
+
+    function ensureActiveChat() {
+      if (!state.chats.length) state.chats = [newChatObject()];
+      if (!state.activeChatId || !activeChat()) state.activeChatId = state.chats[0].id;
+      return activeChat();
+    }
+
+    function openDatabase() {
+      if (dbPromise) return dbPromise;
+      dbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error("IndexedDB is not supported"));
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "path" });
+          if (!db.objectStoreNames.contains("history")) {
+            const history = db.createObjectStore("history", { keyPath: "id", autoIncrement: true });
+            history.createIndex("path", "path", { unique: false });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+      });
+      return dbPromise;
+    }
+
+    function idbRequest(request) { return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+    async function readAllFiles() { try { const db = await openDatabase(); return await idbRequest(db.transaction("files", "readonly").objectStore("files").getAll()); } catch { return []; } }
+    async function putWorkspaceFile(file, snapshot = true) {
+      const normalized = { path: normalizePath(file.path), content: String(file.content ?? ""), mime: file.mime || mimeForPath(file.path), updatedAt: Date.now() };
+      try {
+        const db = await openDatabase();
+        const tx = db.transaction(["files", "history"], "readwrite");
+        if (snapshot) {
+          const old = state.workspaceFiles.find((item) => item.path === normalized.path);
+          if (old) tx.objectStore("history").add({ path: normalized.path, content: old.content, savedAt: Date.now() });
+        }
+        tx.objectStore("files").put(normalized);
+        await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+      } catch { /* The in-memory list still keeps the editor usable. */ }
+      const index = state.workspaceFiles.findIndex((item) => item.path === normalized.path);
+      if (index >= 0) state.workspaceFiles[index] = normalized; else state.workspaceFiles.push(normalized);
+      state.workspaceFiles.sort((a, b) => a.path.localeCompare(b.path));
+      return normalized;
+    }
+    async function removeWorkspaceFile(pathname) {
+      const pathValue = normalizePath(pathname);
+      try { const db = await openDatabase(); await idbRequest(db.transaction("files", "readwrite").objectStore("files").delete(pathValue)); } catch { /* ignore */ }
+      state.workspaceFiles = state.workspaceFiles.filter((file) => file.path !== pathValue);
+    }
+    async function previousSnapshot(pathname) {
+      try {
+        const db = await openDatabase(); const rows = await idbRequest(db.transaction("history", "readonly").objectStore("history").getAll());
+        return rows.filter((row) => row.path === normalizePath(pathname)).sort((a, b) => b.savedAt - a.savedAt)[0] || null;
+      } catch { return null; }
+    }
+
+    function normalizePath(pathname) {
+      return String(pathname || "untitled.txt").replaceAll("\\", "/").split("/").filter((part) => part && part !== "." && part !== "..").join("/").slice(0, 180) || "untitled.txt";
+    }
+    function mimeForPath(pathname) {
+      const extension = String(pathname).split(".").pop().toLowerCase();
+      return ({ html: "text/html", htm: "text/html", css: "text/css", js: "text/javascript", json: "application/json", md: "text/markdown", svg: "image/svg+xml", txt: "text/plain" })[extension] || "text/plain";
+    }
+    function getFile(pathname) { return state.workspaceFiles.find((file) => file.path === normalizePath(pathname)) || null; }
+
+    async function initializeWorkspace() {
+      state.workspaceFiles = await readAllFiles();
+      if (!state.workspaceFiles.length) {
+        await putWorkspaceFile({ path: "index.html", mime: "text/html", content: "<!doctype html>\n<html lang=\"ja\">\n<head><meta charset=\"utf-8\"><title>Playground</title></head>\n<body>\n  <main>\n    <h1>Nemotron Workspace Playground</h1>\n    <p>このファイルを編集してプレビューできます。</p>\n  </main>\n</body>\n</html>\n" }, false);
+        await putWorkspaceFile({ path: "README.md", mime: "text/markdown", content: "# Playground\n\nNemotron にファイルの作成・編集を依頼できます。\n" }, false);
+      }
+      state.editorPath = getFile("index.html") ? "index.html" : state.workspaceFiles[0]?.path || "index.html";
+      state.editorValue = getFile(state.editorPath)?.content || "";
+    }
+
+    function setTheme(theme) {
+      document.body.classList.toggle("light", theme === "light");
+      $("#themeButton").textContent = theme === "light" ? "☀" : "☾";
+      localStorage.setItem(THEME_STORAGE, theme);
+    }
+
+    function renderSidebar() {
+      $("#chatCount").textContent = String(state.chats.length);
+      const list = $("#chatList");
+      list.innerHTML = state.chats.slice().sort((a, b) => b.updatedAt - a.updatedAt).map((chat) => `<div class="chat-item ${chat.id === state.activeChatId ? "active" : ""}" data-chat-id="${escapeHtml(chat.id)}"><span class="chat-item-title">${escapeHtml(chat.title)}</span><span class="chat-item-meta">${formatTime(chat.updatedAt)} · ${chat.messages.length} messages</span><button class="delete-chat" data-delete-chat="${escapeHtml(chat.id)}" type="button" aria-label="チャット削除">×</button></div>`).join("");
+    }
+
+    function inlineMarkdown(value) {
+      return value
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+        .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+
+    function renderMarkdown(markdown) {
+      const source = String(markdown || "").replaceAll("\r\n", "\n");
+      const codeBlocks = [];
+      const withTokens = source.replace(/```([\w-]*)\n?([\s\S]*?)```/g, (_match, language, code) => {
+        const token = `__NW_CODE_${codeBlocks.length}__`;
+        codeBlocks.push(`<pre><code class="language-${escapeHtml(language || "text")}">${escapeHtml(code.replace(/^\n|\n$/g, ""))}</code></pre>`);
+        return token;
+      });
+      const lines = withTokens.split("\n");
+      let html = ""; let listType = null;
+      const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
+      for (let index = 0; index < lines.length; index += 1) {
+        const raw = lines[index];
+        const trimmed = raw.trim();
+        if (!trimmed) { closeList(); continue; }
+        if (/^\|.*\|$/.test(trimmed) && index + 1 < lines.length && /^\|?\s*:?-{3,}/.test(lines[index + 1].trim())) {
+          closeList();
+          const rows = [];
+          while (index < lines.length && /^\|.*\|$/.test(lines[index].trim())) rows.push(lines[index++].trim());
+          index -= 1;
+          const cells = (row) => row.replace(/^\||\|$/g, "").split("|").map((cell) => inlineMarkdown(escapeHtml(cell.trim())));
+          html += `<table><thead><tr>${cells(rows[0]).map((cell) => `<th>${cell}</th>`).join("")}</tr></thead><tbody>${rows.slice(2).map((row) => `<tr>${cells(row).map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+          continue;
+        }
+        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) { closeList(); html += `<h${heading[1].length}>${inlineMarkdown(escapeHtml(heading[2]))}</h${heading[1].length}>`; continue; }
+        const bullet = trimmed.match(/^[-*+]\s+(.+)$/); const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+        if (bullet || ordered) { const type = ordered ? "ol" : "ul"; if (listType !== type) { closeList(); listType = type; html += `<${type}>`; } html += `<li>${inlineMarkdown(escapeHtml((bullet || ordered)[1]))}</li>`; continue; }
+        if (/^>\s?/.test(trimmed)) { closeList(); html += `<blockquote>${inlineMarkdown(escapeHtml(trimmed.replace(/^>\s?/, "")))}</blockquote>`; continue; }
+        closeList();
+        const escaped = inlineMarkdown(escapeHtml(raw));
+        html += escaped.startsWith("__NW_CODE_") ? escaped : `<p>${escaped}</p>`;
+      }
+      closeList();
+      return html.replace(/__NW_CODE_(\d+)__/g, (_match, index) => codeBlocks[Number(index)] || "");
+    }
+
+    function reasoningText(message) {
+      const details = Array.isArray(message.reasoning_details) ? message.reasoning_details : [];
+      const detailText = details.map((detail) => detail?.text || detail?.summary || detail?.data || "").filter(Boolean).join("\n");
+      return [message.reasoning, detailText].filter(Boolean).join("\n").trim();
+    }
+
+    function citationList(annotations) {
+      const seen = new Set();
+      return (annotations || []).map((annotation) => annotation?.url_citation || annotation?.citation || annotation).filter((item) => item?.url && /^https?:\/\//.test(item.url)).filter((item) => { if (seen.has(item.url)) return false; seen.add(item.url); return true; }).slice(0, 20);
+    }
+
+    function renderCharts(charts) {
+      return (charts || []).map((chart) => `<div class="chart-card"><div class="chart-label"><span>▦</span>${escapeHtml(chart.title || "chart_render")}</div>${chart.svg || ""}</div>`).join("");
+    }
+
+    function renderMessageCard(message, target, live = false) {
+      const openState = target.querySelector("details.thinking")?.open;
+      const reasoning = reasoningText(message);
+      const citations = citationList(message.annotations);
+      const thinking = reasoning ? `<details class="thinking" ${live && openState === undefined ? "open" : ""}><summary>Thinking <span class="thinking-status">${live ? "生成中" : `${reasoning.length.toLocaleString()} chars`}</span></summary><pre class="thinking-text">${escapeHtml(reasoning)}</pre></details>` : "";
+      const body = message.content ? `<div class="message-body">${renderMarkdown(message.content)}${renderCharts(message.charts)}${citations.length ? `<div class="citations">${citations.map((item) => `<a class="citation" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">↗ ${escapeHtml(item.title || new URL(item.url).hostname)}</a>`).join("")}</div>` : ""}</div>` : (live ? `<div class="message-body"><span class="spinner"></span> <span class="muted-block">Nemotron が応答を準備中…</span></div>` : "");
+      target.className = "message-card";
+      target.innerHTML = `<div class="message-meta"><span>${message.role === "user" ? "You" : "Nemotron"}</span>${message.usage?.completion_tokens ? `<span>· ${message.usage.completion_tokens.toLocaleString()} tokens</span>` : ""}<div class="message-actions"><button data-copy-message type="button">コピー</button></div></div>${thinking}${body}`;
+      if (openState !== undefined && target.querySelector("details.thinking")) target.querySelector("details.thinking").open = openState;
+      target.querySelector("[data-copy-message]")?.addEventListener("click", async () => { try { await navigator.clipboard.writeText([reasoning, message.content].filter(Boolean).join("\n\n")); showToast("メッセージをコピーしました。"); } catch { showToast("コピーできませんでした。"); } });
+    }
+
+    function emptyStateHtml() {
+      return `<div class="empty-state"><div class="empty-orb">✦</div><h2>何を一緒に作りますか？</h2><p>Nemotron が推論、Planner、IndexedDB Playground、グラフ、Web Search をつないで作業します。Thinking は展開して確認できます。</p><div class="suggestions"><button class="suggestion" data-suggestion="Playground に index.html と style.css を作って、シンプルな自己紹介ページを作成して"><strong>ページを作る</strong>Playground に HTML と CSS を作成</button><button class="suggestion" data-suggestion="このテーマを調査して、主要な論点を比較する表とグラフを作って。最新情報はWeb検索して"><strong>調査して可視化</strong>Web Search と chart_render を使う</button><button class="suggestion" data-suggestion="いまのワークスペースのファイルを確認して、改善点をPlannerで整理して"><strong>Workspace を点検</strong>ファイルを読んで計画を作成</button><button class="suggestion" data-suggestion="現在日時を教えて。current_datetime ツールを使って"><strong>Tool を試す</strong>ローカル Tool Calling を実行</button></div></div>`;
+    }
+
+    function renderMessages() {
+      const chat = ensureActiveChat();
+      $("#conversationTitle").textContent = chat.title;
+      const messages = $("#messages");
+      if (!chat.messages.length && !state.run) messages.innerHTML = emptyStateHtml();
+      else {
+        messages.innerHTML = chat.messages.map((message) => `<article class="message-row ${message.role}" data-message-id="${escapeHtml(message.id)}"><div class="avatar">${message.role === "user" ? "Y" : "N"}</div><div class="message-mount"></div></article>`).join("");
+        chat.messages.forEach((message) => { const mount = messages.querySelector(`[data-message-id="${CSS.escape(message.id)}"] .message-mount`); if (mount) renderMessageCard(message, mount); });
+        if (state.run) {
+          messages.insertAdjacentHTML("beforeend", `<article class="message-row assistant" id="liveMessageRow"><div class="avatar">N</div><div class="message-mount" id="liveMessageMount"></div></article>`);
+          renderMessageCard(state.run.draft, $("#liveMessageMount"), true);
+        }
+      }
+      $$("[data-suggestion]").forEach((button) => button.addEventListener("click", () => { $("#composerInput").value = button.dataset.suggestion; autoResizeComposer(); $("#composerInput").focus(); }));
+      if (state.run) messages.scrollTop = messages.scrollHeight;
+    }
+
+    function updateLiveMessage() {
+      if (!state.run) return;
+      const mount = $("#liveMessageMount");
+      if (mount) renderMessageCard(state.run.draft, mount, true);
+      const messages = $("#messages"); if (messages) messages.scrollTop = messages.scrollHeight;
+      $("#roundMetric").textContent = state.run.round ? String(state.run.round) : "—";
+      $("#tokenMetric").textContent = state.run.usage?.total_tokens ? state.run.usage.total_tokens.toLocaleString() : "—";
+    }
+
+    function activityIcon(status) { return status === "done" ? "✓" : status === "failed" ? "!" : status === "running" ? "•" : "○"; }
+    function addActivity(label, type = "process", status = "running", detail = "") {
+      const entry = { id: uid("activity"), label, type, status, detail, createdAt: Date.now() };
+      state.activities.push(entry); renderActivity(); return entry.id;
+    }
+    function updateActivity(id, changes) { const entry = state.activities.find((item) => item.id === id); if (entry) Object.assign(entry, changes); renderActivity(); }
+
+    function renderActivity() {
+      const rows = state.activities.slice(-80).map((item) => `<div class="activity-card"><div class="activity-card-icon activity-icon ${item.status}">${item.type === "tool" ? "⌘" : item.type === "web" ? "◉" : item.type === "plan" ? "☷" : activityIcon(item.status)}</div><div><h3>${escapeHtml(item.label)}</h3><p>${escapeHtml(item.detail || (item.status === "done" ? "完了" : item.status === "failed" ? "失敗" : item.status === "waiting" ? "待機中" : "実行中"))}</p></div><span class="activity-time">${formatTime(item.createdAt)}</span></div>`).join("");
+      $("#activityContent").innerHTML = rows || `<div class="empty-copy">まだ Activity はありません。メッセージを送ると、推論・Tool・Planner の状態がここに残ります。</div>`;
+      const strip = $("#activityStrip");
+      strip.classList.toggle("visible", Boolean(state.run) || state.activities.length > 0);
+      strip.innerHTML = state.activities.slice(-5).map((item) => `<div class="activity-line"><span class="activity-icon ${item.status}">${item.status === "running" ? "<span class=\"spinner\"></span>" : activityIcon(item.status)}</span><strong>${escapeHtml(item.label)}</strong><span class="activity-detail">${escapeHtml(item.detail || "")}</span></div>`).join("");
+      renderInspector();
+    }
+
+    function renderPlan() {
+      const container = $("#planContent");
+      if (!state.plan) { container.innerHTML = `<div class="empty-state" style="margin-top:10vh"><div class="empty-orb">☷</div><h2>計画はまだありません</h2><p>複数工程の依頼を送ると、Nemotron が plan_create / plan_update / plan_finish でここを更新します。</p></div>`; }
+      else {
+        const done = state.plan.steps.filter((step) => step.status === "done").length; const progress = state.plan.steps.length ? Math.round(done / state.plan.steps.length * 100) : 0;
+        container.innerHTML = `<div class="plan-summary"><div><h2>${escapeHtml(state.plan.title || "Untitled plan")}</h2><p>${escapeHtml(state.plan.summary || "Nemotron が作業を分解しています。")}</p></div><div class="progress-ring" style="--progress:${progress}%">${progress}%</div></div><div class="plan-steps">${state.plan.steps.map((step, index) => `<div class="plan-step ${escapeHtml(step.status)}"><div class="plan-step-number">${step.status === "done" ? "✓" : index + 1}</div><div><h3>${escapeHtml(step.title)}</h3><p>${escapeHtml(step.detail || "")}</p></div><span class="step-status ${escapeHtml(step.status)}">${step.status === "done" ? "完了" : step.status === "running" ? "実行中" : step.status === "failed" ? "失敗" : "待機中"}</span></div>`).join("")}</div>`;
+      }
+      renderInspector();
+    }
+
+    function renderPlayground() {
+      const list = $("#fileList");
+      list.innerHTML = state.workspaceFiles.map((file) => `<button class="file-item ${file.path === state.editorPath ? "active" : ""}" data-file-path="${escapeHtml(file.path)}" type="button"><span>▱</span><span class="file-name">${escapeHtml(file.path)}</span><span class="file-size">${formatBytes(new Blob([file.content]).size)}</span></button>`).join("") || `<div class="empty-copy" style="padding:10px">ファイルがありません。</div>`;
+      $("#editorPath").textContent = state.editorPath + (state.editorDirty ? " · 未保存" : "");
+      const editor = $("#editor"); if (editor.value !== state.editorValue) editor.value = state.editorValue;
+      $("#editorStatus").textContent = state.editorDirty ? "未保存の変更があります" : `${state.editorValue.length.toLocaleString()} chars · ${mimeForPath(state.editorPath)}`;
+      $("#workspaceCount").textContent = `${state.workspaceFiles.length} files`;
+      $("#inspectorFiles").textContent = String(state.workspaceFiles.length);
+    }
+
+    function renderInspector() {
+      const running = state.run?.status || "idle";
+      $("#inspectorRunState").textContent = running;
+      $("#inspectorRounds").textContent = state.run?.round ? String(state.run.round) : "—";
+      $("#inspectorTokens").textContent = state.run?.usage?.total_tokens ? state.run.usage.total_tokens.toLocaleString() : "—";
+      const mini = $("#miniPlan");
+      if (!state.plan) mini.innerHTML = `<div class="muted-block">計画なし</div>`;
+      else mini.innerHTML = state.plan.steps.slice(0, 7).map((step) => `<div class="mini-step ${escapeHtml(step.status)}"><span class="mini-step-mark">${step.status === "done" ? "✓" : step.status === "running" ? "•" : ""}</span><span>${escapeHtml(step.title)}</span></div>`).join("");
+      const done = state.plan?.steps.filter((step) => step.status === "done").length || 0; const total = state.plan?.steps.length || 0;
+      $("#planProgressText").textContent = state.plan ? `${done}/${total}` : "未作成";
+      const counts = {}; state.activities.filter((item) => item.type === "tool").forEach((item) => { counts[item.label] = (counts[item.label] || 0) + 1; });
+      $("#toolCount").textContent = `${Object.values(counts).reduce((a, b) => a + b, 0)} calls`;
+      $("#toolSummary").innerHTML = Object.entries(counts).map(([name, count]) => `<span class="tag">⌘ ${escapeHtml(name)} ×${count}</span>`).join("") || `<span class="muted-block">まだ実行なし</span>`;
+    }
+
+    function setView(view) {
+      state.view = view;
+      ["chat", "plan", "playground", "activity"].forEach((name) => { $(`#${name}View`).hidden = name !== view; });
+      $$('[data-view]').forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+      if (view === "playground") renderPlayground();
+    }
+
+    function applyServerStatus({ ok, configured, label, detail }) {
+      state.server = { ok, configured };
+      $("#serverDot").className = `status-dot ${ok && configured ? "ok" : ok ? "warn" : "error"}`;
+      $("#serverStatus").textContent = label;
+      if (detail) $("#serverStatus").title = detail;
+    }
+
+    async function checkHealth(showMessage = false) {
+      applyServerStatus({ ok: false, configured: false, label: "Proxy 確認中…" });
+      try {
+        const response = await fetch("/api/health", { cache: "no-store" }); const data = await response.json();
+        applyServerStatus({ ok: response.ok && data.ok, configured: Boolean(data.configured), label: data.configured ? "Proxy 接続済み" : "Proxy 接続済み · APIキー未設定", detail: `model: ${data.model || MODEL}` });
+        if (showMessage) showToast(data.configured ? "Render proxy は接続済みです。" : "Proxy は接続済みですが、OPENROUTER_API_KEY が未設定です。", 4500);
+      } catch (error) { applyServerStatus({ ok: false, configured: false, label: "Proxy に接続できません", detail: error.message }); if (showMessage) showToast("/api/health に接続できませんでした。", 4500); }
+    }
+
+    function normalizeReasoningDetails(details) { return Array.isArray(details) ? details.map((item) => ({ ...item })).slice(-200) : []; }
+
+    function localTool(name, description, properties = {}, required = []) { return { type: "function", function: { name, description, parameters: { type: "object", properties, required } } }; }
+    function localTools() {
+      return [
+        localTool("workspace_list_files", "Playground のファイル一覧を取得します。", { prefix: { type: "string" }, query: { type: "string" } }),
+        localTool("workspace_read_file", "Playground の既存ファイルを読みます。編集前には必ず使用してください。", { path: { type: "string" } }, ["path"]),
+        localTool("workspace_write_file", "Playground に新規ファイルを作成、または overwrite=true で置き換えます。", { path: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" } }, ["path", "content"]),
+        localTool("workspace_edit_file", "既存ファイルの old_text を一度だけ new_text に置換する差分編集です。", { path: { type: "string" }, old_text: { type: "string" }, new_text: { type: "string" } }, ["path", "old_text", "new_text"]),
+        localTool("workspace_append_file", "既存ファイルの末尾へ追記します。", { path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
+        localTool("workspace_search_files", "Playground 全体から文字列を検索します。", { query: { type: "string" }, case_sensitive: { type: "boolean" } }, ["query"]),
+        localTool("workspace_rename_file", "Playground のファイル名を変更します。", { from: { type: "string" }, to: { type: "string" } }, ["from", "to"]),
+        localTool("workspace_delete_file", "Playground のファイルを削除します。ユーザーの明示的な依頼がある場合だけ使います。", { path: { type: "string" }, confirm: { type: "boolean" } }, ["path", "confirm"]),
+        localTool("workspace_check_file", "ファイルの簡易構文・内容チェックをします。", { path: { type: "string" } }, ["path"]),
+        localTool("chart_render", "数値データから SVG の折れ線または棒グラフを作成します。ASCIIグラフは禁止です。", { type: { type: "string", enum: ["line", "bar"] }, title: { type: "string" }, labels: { type: "array", items: { type: "string" } }, series: { type: "array", items: { type: "object", properties: { name: { type: "string" }, values: { type: "array", items: { type: "number" } }, color: { type: "string" } }, required: ["name", "values"] } } }, ["type", "labels", "series"]),
+        localTool("current_datetime", "ブラウザのローカル環境から現在日時を取得します。", { timezone: { type: "string" } }),
+        localTool("plan_create", "重いタスクを工程へ分解して Planner を開始します。", { title: { type: "string" }, summary: { type: "string" }, steps: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, detail: { type: "string" } }, required: ["title"] } } }, ["title", "steps"]),
+        localTool("plan_update", "Planner の工程状態を更新します。", { step_id: { type: "string" }, step: { type: "string" }, status: { type: "string", enum: ["pending", "running", "done", "failed"] }, detail: { type: "string" } }, ["status"]),
+        localTool("plan_finish", "Planner を完了し、最終的なまとめを記録します。", { summary: { type: "string" } }, ["summary"]),
+      ];
+    }
+
+    function serverTools() {
+      if (!state.settings.webSearch) return [];
+      return [{ type: "openrouter:web_search", parameters: { engine: "auto", max_results: state.settings.webResults, max_total_results: Math.max(state.settings.webResults * 3, 10) } }, { type: "openrouter:web_fetch" }];
+    }
+
+    function systemPrompt() {
+      const date = new Intl.DateTimeFormat("ja-JP", { dateStyle: "full", timeStyle: "long" }).format(new Date());
+      return `あなたは Nemotron Workspace のエージェントです。現在日時は ${date} です。ユーザーの言語に合わせて答えてください。
+
+役割:
+- 依頼をまず理解し、通常の質問は直接答え、複数工程・調査・実装・検証を含む重いタスクは plan_create で計画してから実行する。
+- 既存の Playground ファイルを変更するときは、必ず workspace_read_file で現在内容を確認してから workspace_edit_file を優先する。毎回全コードを書き直さない。
+- ファイルを書いたり編集したら、必要に応じて workspace_check_file で確認する。
+- 3点以上の数値推移やユーザーがグラフを求める場合は chart_render を必ず使う。ASCIIアートや疑似グラフは禁止。
+- 日時は current_datetime を使う。Web上の最新情報、価格、ニュース、現行仕様は Web Search / Fetch を使い、回答に出典リンクを含める。
+- Tool の結果を受け取ったら、必要なら次の工程を続け、最後に簡潔で検証可能な回答を作る。
+
+制約:
+- Playground はブラウザ内 IndexedDB であり、サーバーにファイルを保存していない。
+- 危険な削除や大量の置換は、ユーザーの意図を確認してから行う。
+- 推論の途中を隠さず、Thinking と Tool の進行が UI に表示される前提で、各工程を明確にする。`;
+    }
+
+    function apiMessages(messages) {
+      return messages.map((message) => {
+        const output = { role: message.role, content: message.content || "" };
+        if (message.role === "assistant" && message.tool_calls?.length) output.tool_calls = message.tool_calls;
+        if (message.role === "assistant" && message.reasoning_details?.length) output.reasoning_details = message.reasoning_details;
+        if (message.role === "assistant" && message.reasoning) output.reasoning = message.reasoning;
+        return output;
+      });
+    }
+
+    async function readSse(response, onEvent, signal) {
+      const reader = response.body?.getReader(); if (!reader) throw new Error("ストリーム本文を取得できませんでした。");
+      const decoder = new TextDecoder(); let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read(); if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split(/\r?\n\r?\n/); buffer = chunks.pop() || "";
+        for (const chunk of chunks) {
+          const data = chunk.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+          if (!data || data === "[DONE]") continue;
+          try { await onEvent(JSON.parse(data)); } catch (error) { if (error?.isWorkspaceStreamError) throw error; }
+        }
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      }
+      const tail = buffer.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+      if (tail && tail !== "[DONE]") { try { await onEvent(JSON.parse(tail)); } catch (error) { if (error?.isWorkspaceStreamError) throw error; } }
+    }
+
+    function streamError(message, status = 502, raw = null) { const error = new Error(message); error.status = status; error.raw = raw; error.isWorkspaceStreamError = true; return error; }
+    function isServerTool502(error) { return Number(error?.status) === 502 && /server\s*tool|server_tool|502/i.test(`${error.message} ${JSON.stringify(error.raw || {})}`); }
+
+    async function requestRound(payload, signal) {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal });
+      if (!response.ok) {
+        const text = await response.text(); let data = null; try { data = JSON.parse(text); } catch { /* text response */ }
+        const message = data?.error?.message || text || `Proxy HTTP ${response.status}`;
+        throw streamError(`HTTP ${response.status}: ${message}`, response.status, data || text);
+      }
+      const result = { content: "", reasoning: "", reasoning_details: [], toolCalls: [], annotations: [], usage: null, finishReason: null };
+      const toolCallMap = new Map();
+      await readSse(response, async (event) => {
+        if (event.error) throw streamError(`Server tool error: ${event.error.message || JSON.stringify(event.error)}`, Number(event.error.code) || 502, event);
+        const choice = event.choices?.[0]; const delta = choice?.delta || {};
+        if (typeof delta.content === "string") result.content += delta.content;
+        if (typeof delta.reasoning === "string") result.reasoning += delta.reasoning;
+        if (typeof delta.reasoning_content === "string") result.reasoning += delta.reasoning_content;
+        if (Array.isArray(delta.reasoning_details)) result.reasoning_details.push(...normalizeReasoningDetails(delta.reasoning_details));
+        if (Array.isArray(delta.annotations)) result.annotations.push(...delta.annotations);
+        if (Array.isArray(choice?.annotations)) result.annotations.push(...choice.annotations);
+        if (event.usage) result.usage = event.usage;
+        if (choice?.finish_reason) result.finishReason = choice.finish_reason;
+        for (const partial of delta.tool_calls || []) {
+          const index = Number(partial.index ?? toolCallMap.size); const call = toolCallMap.get(index) || { id: "", type: "function", function: { name: "", arguments: "" } };
+          if (partial.id) call.id += partial.id;
+          if (partial.type) call.type = partial.type;
+          if (partial.function?.name) call.function.name += partial.function.name;
+          if (partial.function?.arguments) call.function.arguments += partial.function.arguments;
+          toolCallMap.set(index, call);
+          if (call.function.name) updateLiveToolPreview(call.function.name);
+        }
+        result.toolCalls = [...toolCallMap.values()];
+        if (state.run) { state.run.draft.content = result.content; state.run.draft.reasoning = result.reasoning; state.run.draft.reasoning_details = result.reasoning_details; state.run.draft.annotations = result.annotations; state.run.draft.usage = result.usage; updateLiveMessage(); }
+      }, signal);
+      return result;
+    }
+
+    function updateLiveToolPreview(name) {
+      if (!state.run || !name) return;
+      if (!state.run.previewedTools.has(name)) { state.run.previewedTools.add(name); addActivity(name, "tool", "waiting", "モデルが Tool を要求中…"); }
+    }
+
+    function parseToolArguments(call) { try { return safeJson(call.function?.arguments || "{}", {}); } catch { return {}; } }
+
+    function searchWorkspace(query, caseSensitive = false) {
+      const needle = String(query || ""); if (!needle) return [];
+      const haystack = caseSensitive ? needle : needle.toLowerCase();
+      return state.workspaceFiles.flatMap((file) => {
+        const lines = file.content.split("\n"); return lines.map((line, index) => { const value = caseSensitive ? line : line.toLowerCase(); return value.includes(haystack) ? { path: file.path, line: index + 1, text: line.slice(0, 240) } : null; }).filter(Boolean);
+      }).slice(0, 100);
+    }
+
+    function checkFile(pathname) {
+      const file = getFile(pathname); if (!file) return { ok: false, error: "file_not_found" };
+      const issues = []; const extension = file.path.split(".").pop().toLowerCase();
+      if (["html", "htm"].includes(extension) && !/<html[\s>]/i.test(file.content)) issues.push("<html> タグがありません");
+      if (["html", "htm"].includes(extension) && !/<\/html>/i.test(file.content)) issues.push("</html> の閉じタグがありません");
+      if (extension === "json") { try { JSON.parse(file.content); } catch (error) { issues.push(`JSON: ${error.message}`); } }
+      if (["js", "mjs", "css", "html", "htm"].includes(extension)) { const opens = (file.content.match(/[({[]/g) || []).length; const closes = (file.content.match(/[)}\]]/g) || []).length; if (Math.abs(opens - closes) > 2) issues.push("括弧の数が大きく不一致です（簡易チェック）"); }
+      return { ok: issues.length === 0, path: file.path, issues, bytes: new Blob([file.content]).size };
+    }
+
+    function chartArgs(args) {
+      const labels = Array.isArray(args.labels) ? args.labels.map((label) => String(label)).slice(0, 60) : [];
+      const rawSeries = Array.isArray(args.series) ? args.series : [];
+      const series = rawSeries.slice(0, 6).map((item, index) => ({ name: String(item?.name || `Series ${index + 1}`).slice(0, 80), values: (Array.isArray(item?.values) ? item.values : []).map(Number).slice(0, labels.length || 60), color: /^#[0-9a-f]{6}$/i.test(String(item?.color || "")) ? item.color : palette[index % palette.length] })).filter((item) => item.values.length);
+      const count = Math.max(labels.length, ...series.map((item) => item.values.length), 0); while (labels.length < count) labels.push(String(labels.length + 1));
+      series.forEach((item) => { while (item.values.length < labels.length) item.values.push(null); });
+      return { type: args.type === "bar" ? "bar" : "line", title: String(args.title || "Chart").slice(0, 120), labels: labels.slice(0, 60), series };
+    }
+
+    function chartSvg(chart) {
+      const width = 760; const height = 360; const left = 58; const right = 24; const top = 34; const bottom = 55; const plotW = width - left - right; const plotH = height - top - bottom;
+      const values = chart.series.flatMap((item) => item.values.filter((value) => Number.isFinite(value)));
+      if (!values.length || !chart.labels.length) return "";
+      let min = Math.min(...values); let max = Math.max(...values); if (chart.type === "bar") min = Math.min(0, min); if (min === max) { min -= 1; max += 1; }
+      const y = (value) => top + (max - value) / (max - min) * plotH; const x = (index) => left + (chart.labels.length === 1 ? plotW / 2 : index / (chart.labels.length - 1) * plotW);
+      const text = (value, xPos, yPos, anchor = "start", fill = "#8fa4c7", size = 10) => `<text x="${xPos.toFixed(1)}" y="${yPos.toFixed(1)}" text-anchor="${anchor}" fill="${fill}" font-size="${size}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">${escapeHtml(value)}</text>`;
+      let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(chart.title)}">`;
+      for (let tick = 0; tick <= 4; tick += 1) { const value = min + (max - min) * tick / 4; const yPos = y(value); svg += `<line x1="${left}" y1="${yPos.toFixed(1)}" x2="${width - right}" y2="${yPos.toFixed(1)}" stroke="#62799d" stroke-opacity=".18"/>`; svg += text(Number(value.toFixed(2)).toLocaleString(), left - 8, yPos + 3, "end"); }
+      svg += `<line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" stroke="#8fa4c7" stroke-opacity=".35"/><line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" stroke="#8fa4c7" stroke-opacity=".35"/>`;
+      const labelEvery = Math.max(1, Math.ceil(chart.labels.length / 8)); chart.labels.forEach((label, index) => { if (index % labelEvery === 0 || index === chart.labels.length - 1) svg += text(label.slice(0, 16), x(index), height - bottom + 19, "middle", "#8fa4c7", 9); });
+      if (chart.type === "bar") {
+        const groupW = plotW / chart.labels.length; const barW = Math.max(2, Math.min(24, groupW / chart.series.length * .7));
+        chart.series.forEach((series, seriesIndex) => series.values.forEach((value, index) => { if (!Number.isFinite(value)) return; const xPos = left + index * groupW + groupW / 2 + (seriesIndex - (chart.series.length - 1) / 2) * barW; const yPos = y(Math.max(0, value)); const h = Math.abs(y(value) - y(0)); svg += `<rect x="${(xPos - barW / 2).toFixed(1)}" y="${Math.min(yPos, y(0)).toFixed(1)}" width="${Math.max(1, barW - 1).toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" rx="3" fill="${series.color}" fill-opacity=".78"><title>${escapeHtml(series.name)} · ${escapeHtml(chart.labels[index])}: ${value}</title></rect>`; }));
+      } else {
+        chart.series.forEach((series) => { const points = series.values.map((value, index) => Number.isFinite(value) ? `${x(index).toFixed(1)},${y(value).toFixed(1)}` : null); let path = ""; points.forEach((point) => { if (point) path += `${path ? " L" : "M"}${point}`; }); svg += `<path d="${path}" fill="none" stroke="${series.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`; series.values.forEach((value, index) => { if (Number.isFinite(value)) svg += `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="3.4" fill="${series.color}" stroke="#0e1a2d" stroke-width="1.4"><title>${escapeHtml(series.name)} · ${escapeHtml(chart.labels[index])}: ${value}</title></circle>`; }); });
+      }
+      let legendX = left; const legendY = 17; chart.series.forEach((series) => { svg += `<circle cx="${legendX}" cy="${legendY - 3}" r="4" fill="${series.color}"/>${text(series.name, legendX + 8, legendY, "start", "#e7efff", 10)}`; legendX += Math.max(70, series.name.length * 7 + 28); });
+      return `${svg}</svg>`;
+    }
+
+    async function executeLocalTool(name, args) {
+      switch (name) {
+        case "workspace_list_files": {
+          const prefix = String(args.prefix || ""); const query = String(args.query || "").toLowerCase(); return { ok: true, files: state.workspaceFiles.filter((file) => (!prefix || file.path.startsWith(prefix)) && (!query || file.path.toLowerCase().includes(query))).map((file) => ({ path: file.path, bytes: new Blob([file.content]).size, mime: file.mime, updatedAt: file.updatedAt })) };
+        }
+        case "workspace_read_file": { const file = getFile(args.path); return file ? { ok: true, path: file.path, content: file.content, bytes: new Blob([file.content]).size } : { ok: false, error: "file_not_found", path: normalizePath(args.path) }; }
+        case "workspace_write_file": { const pathValue = normalizePath(args.path); const existing = getFile(pathValue); if (existing && !args.overwrite) return { ok: false, error: "file_exists", hint: "Use workspace_read_file then workspace_edit_file, or set overwrite=true only when requested." }; if (String(args.content || "").length > 1000000) return { ok: false, error: "file_too_large" }; const file = await putWorkspaceFile({ path: pathValue, content: String(args.content || "") }); renderPlayground(); return { ok: true, action: existing ? "overwritten" : "created", path: file.path, bytes: new Blob([file.content]).size }; }
+        case "workspace_edit_file": { const file = getFile(args.path); if (!file) return { ok: false, error: "file_not_found" }; const oldText = String(args.old_text ?? ""); const newText = String(args.new_text ?? ""); const occurrences = oldText ? file.content.split(oldText).length - 1 : 0; if (!occurrences) return { ok: false, error: "old_text_not_found", path: file.path }; if (occurrences > 1) return { ok: false, error: "old_text_not_unique", occurrences, hint: "Read the file again and provide a larger unique block." }; const updated = await putWorkspaceFile({ path: file.path, content: file.content.replace(oldText, newText) }); state.editorPath = updated.path; state.editorValue = updated.content; state.editorDirty = false; renderPlayground(); return { ok: true, path: updated.path, replaced: 1, bytes: new Blob([updated.content]).size }; }
+        case "workspace_append_file": { const file = getFile(args.path); if (!file) return { ok: false, error: "file_not_found" }; const updated = await putWorkspaceFile({ path: file.path, content: file.content + String(args.content || "") }); state.editorPath = updated.path; state.editorValue = updated.content; state.editorDirty = false; renderPlayground(); return { ok: true, path: updated.path, bytes: new Blob([updated.content]).size }; }
+        case "workspace_search_files": return { ok: true, query: String(args.query || ""), matches: searchWorkspace(args.query, Boolean(args.case_sensitive)) };
+        case "workspace_rename_file": { const from = getFile(args.from); const to = normalizePath(args.to); if (!from) return { ok: false, error: "source_not_found" }; if (getFile(to)) return { ok: false, error: "destination_exists" }; await putWorkspaceFile({ path: to, content: from.content, mime: mimeForPath(to) }, false); await removeWorkspaceFile(from.path); if (state.editorPath === from.path) { state.editorPath = to; state.editorValue = from.content; } renderPlayground(); return { ok: true, from: from.path, to }; }
+        case "workspace_delete_file": { if (args.confirm !== true) return { ok: false, error: "confirmation_required" }; const file = getFile(args.path); if (!file) return { ok: false, error: "file_not_found" }; await removeWorkspaceFile(file.path); if (state.editorPath === file.path) { state.editorPath = state.workspaceFiles[0]?.path || "index.html"; state.editorValue = getFile(state.editorPath)?.content || ""; state.editorDirty = false; } renderPlayground(); return { ok: true, deleted: file.path }; }
+        case "workspace_check_file": return checkFile(args.path);
+        case "chart_render": { const chart = chartArgs(args); if (!chart.series.length) return { ok: false, error: "no_numeric_series" }; chart.svg = chartSvg(chart); state.run?.charts.push(chart); updateLiveMessage(); return { ok: true, chart_id: uid("chart"), type: chart.type, title: chart.title, labels: chart.labels, series: chart.series.map((series) => ({ name: series.name, values: series.values })) }; }
+        case "current_datetime": { const timezone = String(args.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Tokyo"); const now = new Date(); return { ok: true, iso: now.toISOString(), local: new Intl.DateTimeFormat("ja-JP", { dateStyle: "full", timeStyle: "long", timeZone: timezone }).format(now), timezone }; }
+        case "plan_create": { state.plan = { title: String(args.title || "作業計画"), summary: String(args.summary || ""), steps: (Array.isArray(args.steps) ? args.steps : []).slice(0, 20).map((step, index) => ({ id: String(step.id || `step-${index + 1}`), title: String(step.title || `工程 ${index + 1}`), detail: String(step.detail || ""), status: "pending" })) }; renderPlan(); return { ok: true, plan: state.plan }; }
+        case "plan_update": { if (!state.plan) return { ok: false, error: "plan_not_found" }; const target = String(args.step_id || args.step || ""); let step = state.plan.steps.find((item) => item.id === target || item.title === target); if (!step && /^\d+$/.test(target)) step = state.plan.steps[Number(target) - 1]; if (!step) step = state.plan.steps.find((item) => item.status === "pending"); if (!step) return { ok: false, error: "step_not_found" }; step.status = ["pending", "running", "done", "failed"].includes(args.status) ? args.status : "running"; if (args.detail) step.detail = String(args.detail); renderPlan(); return { ok: true, step }; }
+        case "plan_finish": { if (!state.plan) return { ok: false, error: "plan_not_found" }; state.plan.summary = String(args.summary || state.plan.summary || "完了"); state.plan.steps.forEach((step) => { if (step.status === "running") step.status = "done"; }); renderPlan(); return { ok: true, summary: state.plan.summary }; }
+        default: return { ok: false, error: "unknown_tool", name };
+      }
+    }
+
+    async function executeToolCall(call) {
+      const name = call.function?.name || "unknown_tool"; const args = parseToolArguments(call); const previewId = state.activities.find((item) => item.type === "tool" && item.label === name && item.status === "waiting")?.id || addActivity(name, "tool", "running", "引数を検証しています…");
+      updateActivity(previewId, { status: "running", detail: "ブラウザ側で実行中…" });
+      try { const result = await executeLocalTool(name, args); updateActivity(previewId, { status: result?.ok === false ? "failed" : "done", detail: result?.ok === false ? `失敗: ${result.error || "unknown"}` : "ブラウザ側で完了" }); return result; }
+      catch (error) { updateActivity(previewId, { status: "failed", detail: error.message }); return { ok: false, error: error.message }; }
+    }
+
+    function assistantApiMessage(result) {
+      const message = { role: "assistant", content: result.content || "" };
+      if (result.toolCalls.length) message.tool_calls = result.toolCalls;
+      if (result.reasoning_details.length) message.reasoning_details = result.reasoning_details;
+      if (result.reasoning) message.reasoning = result.reasoning;
+      return message;
+    }
+
+    async function requestWithFallback(payload, signal) {
+      try { return await requestRound(payload, signal); }
+      catch (error) {
+        if (state.settings.webSearch && isServerTool502(error) && !state.run.fallbackUsed) {
+          state.run.fallbackUsed = true;
+          const fallbackId = addActivity("Web検索", "web", "running", "Server Tool 502 → 互換モードで再試行");
+          state.run.draft.content = ""; state.run.draft.reasoning = ""; state.run.draft.reasoning_details = []; state.run.draft.annotations = []; state.run.draft.charts = [];
+          updateLiveMessage();
+          const fallbackPayload = { ...payload, tools: localTools(), plugins: [{ id: "web", max_results: state.settings.webResults }] };
+          try { const result = await requestRound(fallbackPayload, signal); updateActivity(fallbackId, { status: "done", detail: "互換 Web Search で回答を継続しました" }); return result; }
+          catch (fallbackError) { updateActivity(fallbackId, { status: "failed", detail: fallbackError.message }); throw fallbackError; }
+        }
+        throw error;
+      }
+    }
+
+    function errorMessage(error) {
+      const status = error.status ? `HTTP ${error.status}: ` : "";
+      if (error.name === "AbortError") return "生成を停止しました。";
+      if (Number(error.status) === 401) return `${status}${error.message.replace(/^HTTP 401:\s*/, "")}\n\nRender の OPENROUTER_API_KEY が有効か、設定画面の「401診断」で確認してください。ブラウザからキーは送信していません。`;
+      if (Number(error.status) === 502) return `${status}${error.message.replace(/^HTTP 502:\s*/, "")}\n\nOpenRouter または Web Search の一時的なエラーです。Web Search が有効なら互換フォールバックを試します。`;
+      return `${status}${error.message || "予期しないエラーが発生しました。"}`;
+    }
+
+    function setRunControls(running) {
+      const button = $("#sendButton");
+      button.textContent = running ? "■" : "➤";
+      button.setAttribute("aria-label", running ? "生成を停止" : "送信");
+      button.title = running ? "生成を停止" : "送信";
+    }
+
+    function stopGeneration() {
+      if (state.run && currentAbort) { showToast("生成を停止しています…"); currentAbort.abort(); }
+    }
+
+    async function sendMessage(textValue) {
+      if (state.run) { stopGeneration(); return; }
+      const text = String(textValue ?? $("#composerInput").value).trim(); if (!text) return;
+      const chat = ensureActiveChat(); const userMessage = { id: uid("message"), role: "user", content: text, createdAt: Date.now() };
+      chat.messages.push(userMessage); chat.updatedAt = Date.now(); if (chat.messages.filter((item) => item.role === "user").length === 1) chat.title = text.slice(0, 34) + (text.length > 34 ? "…" : "");
+      saveChats(); $("#composerInput").value = ""; autoResizeComposer();
+      state.run = { status: "running", round: 0, usage: null, charts: [], fallbackUsed: false, previewedTools: new Set(), draft: { id: uid("message"), role: "assistant", content: "", reasoning: "", reasoning_details: [], annotations: [], charts: [], createdAt: Date.now() } };
+      currentAbort = new AbortController(); state.activities = state.settings.keepActivity ? [] : state.activities;
+      setRunControls(true);
+      const reasoningActivity = addActivity("Nemotron", "reasoning", "running", "推論ストリームを開始しました");
+      let serverWebActivity = null; if (state.settings.webSearch) serverWebActivity = addActivity("Web Search / Fetch", "web", "waiting", "OpenRouter Server Tool の判断を待っています");
+      renderMessages(); renderActivity();
+      let loopMessages = [{ role: "system", content: systemPrompt() }, ...apiMessages(chat.messages)]; let finalResult = null;
+      try {
+        for (let round = 1; round <= state.settings.maxRounds; round += 1) {
+          state.run.round = round; state.run.draft = { ...state.run.draft, content: "", reasoning: "", reasoning_details: [], annotations: [], charts: state.run.charts };
+          updateLiveMessage();
+          const payload = { model: MODEL, messages: loopMessages, tools: [...localTools(), ...serverTools()], stream: true, stream_options: { include_usage: true }, parallel_tool_calls: false, temperature: state.settings.temperature };
+          if (state.settings.reasoningMaxTokens > 0) payload.reasoning = { max_tokens: state.settings.reasoningMaxTokens, exclude: false };
+          const result = await requestWithFallback(payload, currentAbort.signal); state.run.usage = result.usage || state.run.usage;
+          if (result.annotations.length) { state.run.draft.annotations = result.annotations; if (serverWebActivity) updateActivity(serverWebActivity, { status: "done", detail: `${citationList(result.annotations).length || "複数"} 件の出典を取得しました` }); }
+          if (result.toolCalls.length) {
+            updateActivity(reasoningActivity, { status: "done", detail: `Round ${round} の推論と Tool 選択が完了` });
+            loopMessages.push(assistantApiMessage(result));
+            for (const call of result.toolCalls) {
+              const resultValue = await executeToolCall(call);
+              loopMessages.push({ role: "tool", tool_call_id: call.id || uid("tool"), content: JSON.stringify(resultValue) });
+            }
+            state.run.draft.charts = state.run.charts; renderMessages();
+            continue;
+          }
+          finalResult = result; break;
+        }
+        if (!finalResult) finalResult = { content: "Tool の実行回数が上限に達しました。Planner と Activity を確認し、続きの依頼を送ってください。", reasoning: state.run.draft.reasoning, reasoning_details: state.run.draft.reasoning_details, annotations: state.run.draft.annotations, usage: state.run.usage };
+        updateActivity(reasoningActivity, { status: "done", detail: `Round ${state.run.round} で最終回答を受信` });
+        if (serverWebActivity && !state.activities.find((item) => item.id === serverWebActivity && item.status === "done")) updateActivity(serverWebActivity, { status: "done", detail: "Server Tool セッション完了（検索なしの場合も含む）" });
+        const assistantMessage = { id: uid("message"), role: "assistant", content: finalResult.content || "回答本文がありませんでした。", reasoning: finalResult.reasoning || state.run.draft.reasoning, reasoning_details: finalResult.reasoning_details || state.run.draft.reasoning_details, annotations: finalResult.annotations || state.run.draft.annotations, charts: state.run.charts, usage: finalResult.usage || state.run.usage, createdAt: Date.now() };
+        chat.messages.push(assistantMessage); chat.updatedAt = Date.now(); saveChats(); state.run = null; currentAbort = null; setRunControls(false); renderAll();
+      } catch (error) {
+        updateActivity(reasoningActivity, { status: error.name === "AbortError" ? "done" : "failed", detail: errorMessage(error).split("\n")[0] });
+        if (serverWebActivity) updateActivity(serverWebActivity, { status: error.name === "AbortError" ? "done" : "failed", detail: error.name === "AbortError" ? "停止しました" : error.message });
+        const assistantMessage = { id: uid("message"), role: "assistant", content: `⚠️ ${errorMessage(error)}`, reasoning: state.run?.draft.reasoning || "", reasoning_details: state.run?.draft.reasoning_details || [], annotations: state.run?.draft.annotations || [], charts: state.run?.charts || [], createdAt: Date.now() };
+        chat.messages.push(assistantMessage); chat.updatedAt = Date.now(); saveChats(); state.run = null; currentAbort = null; setRunControls(false); renderAll();
+      }
+    }
+
+    function renderAll() { renderSidebar(); renderMessages(); renderPlan(); renderPlayground(); renderActivity(); renderInspector(); $("#composerMode").textContent = state.settings.webSearch ? "Web Search ON" : "Web Search OFF"; }
+    function autoResizeComposer() { const input = $("#composerInput"); input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 180)}px`; }
+
+    async function runDiagnostics() {
+      const resultElement = $("#diagnosticResult"); resultElement.innerHTML = `<div class="muted-block"><span class="spinner"></span> Render proxy 経由で3段階診断を実行しています…</div>`;
+      try {
+        const response = await fetch("/api/diagnostics", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); const data = await response.json();
+        resultElement.innerHTML = (data.steps || []).map((step) => `<div class="diagnostic-row"><span class="${step.ok ? "diagnostic-ok" : step.httpStatus === null ? "diagnostic-skip" : "diagnostic-fail"}">${step.ok ? "✓" : step.httpStatus === null ? "○" : "!"}</span><strong>${escapeHtml(step.label)}</strong><p>${step.httpStatus ? `HTTP ${step.httpStatus} · ` : ""}${escapeHtml(step.detail || "")}</p></div>`).join("") || `<div class="muted-block">診断結果がありません。</div>`;
+        showToast(data.ok ? "3段階の401診断が完了しました。" : "診断に失敗した項目があります。結果を確認してください。", 4500);
+      } catch (error) { resultElement.innerHTML = `<div class="diagnostic-row"><span class="diagnostic-fail">!</span><strong>Proxy</strong><p>${escapeHtml(error.message)}</p></div>`; showToast("診断エンドポイントに接続できませんでした。", 4500); }
+    }
+
+    function openSettings() {
+      $("#maxRoundsInput").value = state.settings.maxRounds; $("#temperatureInput").value = state.settings.temperature; $("#reasoningInput").value = String(state.settings.reasoningMaxTokens); $("#webResultsInput").value = state.settings.webResults; $("#webSearchInput").checked = state.settings.webSearch; $("#keepActivityInput").checked = state.settings.keepActivity; $("#settingsDialog").showModal();
+    }
+
+    async function saveCurrentFile() {
+      const editor = $("#editor"); const file = getFile(state.editorPath); if (!file) { showToast("保存対象のファイルがありません。"); return; }
+      await putWorkspaceFile({ ...file, content: editor.value }); state.editorValue = editor.value; state.editorDirty = false; renderPlayground(); showToast(`${state.editorPath} を保存しました。`);
+    }
+
+    async function importFiles(fileList) {
+      const files = [...fileList]; for (const file of files) { const pathValue = normalizePath(file.webkitRelativePath || file.name); await putWorkspaceFile({ path: pathValue, content: await file.text(), mime: file.type || mimeForPath(pathValue) }, false); }
+      if (files.length) { const firstPath = normalizePath(files[0].webkitRelativePath || files[0].name); state.editorPath = getFile(firstPath) ? firstPath : state.editorPath; state.editorValue = getFile(state.editorPath)?.content || state.editorValue; renderPlayground(); showToast(`${files.length} ファイルを読み込みました。`); }
+    }
+
+    function downloadText(filename, content, mime = "text/plain") { const url = URL.createObjectURL(new Blob([content], { type: mime })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+
+    function previewCurrentFile() {
+      const file = getFile(state.editorPath); if (!file || !/\.html?$/i.test(file.path)) { showToast("HTML ファイルを選択してからプレビューしてください。"); return; }
+      const url = URL.createObjectURL(new Blob([file.content], { type: "text/html" })); $("#previewTitle").textContent = `${file.path} · Preview`; $("#previewFrame").src = url; $("#previewDialog").showModal(); $("#previewDialog").addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
+    }
+
+    function bindEvents() {
+      $("#newChatButton").addEventListener("click", () => { const chat = newChatObject(); state.chats.unshift(chat); state.activeChatId = chat.id; state.activities = []; state.plan = null; setView("chat"); saveChats(); renderAll(); });
+      $("#healthButton").addEventListener("click", () => checkHealth(true)); $("#themeButton").addEventListener("click", () => setTheme(document.body.classList.contains("light") ? "dark" : "light")); $("#settingsButton").addEventListener("click", openSettings);
+      $$('[data-view]').forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+      $("#chatList").addEventListener("click", (event) => { const deleteButton = event.target.closest("[data-delete-chat]"); if (deleteButton) { event.stopPropagation(); state.chats = state.chats.filter((chat) => chat.id !== deleteButton.dataset.deleteChat); ensureActiveChat(); saveChats(); renderAll(); return; } const item = event.target.closest("[data-chat-id]"); if (item) { state.activeChatId = item.dataset.chatId; state.plan = null; state.activities = []; setView("chat"); renderAll(); } });
+      $("#composerForm").addEventListener("submit", (event) => { event.preventDefault(); sendMessage(); }); $("#composerInput").addEventListener("input", autoResizeComposer); $("#composerInput").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } });
+      $("#diagnosticsButton").addEventListener("click", () => { $("#settingsDialog").showModal(); runDiagnostics(); }); $("#runDiagnosticsFromSettings").addEventListener("click", runDiagnostics); $("#saveSettingsButton").addEventListener("click", () => { state.settings.maxRounds = Math.max(1, Math.min(20, Number($("#maxRoundsInput").value) || 8)); state.settings.temperature = Math.max(0, Math.min(2, Number($("#temperatureInput").value) || 0)); state.settings.reasoningMaxTokens = Math.max(0, Number($("#reasoningInput").value) || 0); state.settings.webResults = Math.max(1, Math.min(10, Number($("#webResultsInput").value) || 5)); state.settings.webSearch = $("#webSearchInput").checked; state.settings.keepActivity = $("#keepActivityInput").checked; saveSettings(); $("#settingsDialog").close(); renderAll(); showToast("設定を保存しました。"); });
+      $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => document.getElementById(button.dataset.closeDialog).close())); $("#clearPlanButton").addEventListener("click", () => { state.plan = null; renderPlan(); renderInspector(); }); $("#clearActivityButton").addEventListener("click", () => { state.activities = []; renderActivity(); });
+      $("#newFileButton").addEventListener("click", async () => { const name = window.prompt("新しいファイル名", "src/new-file.txt"); if (!name) return; const pathValue = normalizePath(name); if (getFile(pathValue)) { showToast("同名のファイルがあります。"); return; } await putWorkspaceFile({ path: pathValue, content: "" }, false); state.editorPath = pathValue; state.editorValue = ""; state.editorDirty = false; renderPlayground(); });
+      $("#fileList").addEventListener("click", (event) => { const item = event.target.closest("[data-file-path]"); if (!item) return; if (state.editorDirty && !window.confirm("未保存の変更を破棄しますか？")) return; state.editorPath = item.dataset.filePath; state.editorValue = getFile(state.editorPath)?.content || ""; state.editorDirty = false; renderPlayground(); });
+      $("#editor").addEventListener("input", (event) => { state.editorValue = event.target.value; state.editorDirty = true; $("#editorPath").textContent = state.editorPath + " · 未保存"; $("#editorStatus").textContent = "未保存の変更があります"; }); $("#editor").addEventListener("keydown", (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveCurrentFile(); } }); $("#saveFileButton").addEventListener("click", saveCurrentFile); $("#undoFileButton").addEventListener("click", async () => { const snapshot = await previousSnapshot(state.editorPath); if (!snapshot) { showToast("戻せる保存履歴がありません。"); return; } state.editorValue = snapshot.content; state.editorDirty = true; renderPlayground(); showToast("直前の保存内容を復元しました。保存すると確定します。"); }); $("#previewFileButton").addEventListener("click", previewCurrentFile); $("#downloadFileButton").addEventListener("click", () => { const file = getFile(state.editorPath); if (file) downloadText(file.path.split("/").pop(), state.editorValue, file.mime); }); $("#exportWorkspaceButton").addEventListener("click", () => downloadText("nemotron-workspace.json", JSON.stringify({ exportedAt: new Date().toISOString(), files: state.workspaceFiles }, null, 2), "application/json"));
+      $("#importFilesButton").addEventListener("click", () => $("#fileInput").click()); $("#importFolderButton").addEventListener("click", () => $("#folderInput").click()); $("#fileInput").addEventListener("change", (event) => importFiles(event.target.files)); $("#folderInput").addEventListener("change", (event) => importFiles(event.target.files));
+      window.addEventListener("beforeunload", (event) => { if (state.editorDirty) { event.preventDefault(); event.returnValue = ""; } });
+    }
+
+    async function initialize() {
+      state.settings = loadSettings(); state.chats = loadChats(); ensureActiveChat(); state.activeChatId = state.chats[0].id; setTheme(localStorage.getItem(THEME_STORAGE) || "dark"); bindEvents(); await initializeWorkspace(); renderAll(); checkHealth();
+    }
+
+    initialize().catch((error) => { console.error(error); showToast(`初期化に失敗しました: ${error.message}`, 6000); renderAll(); });
+  </script>
+</body>
+</html>

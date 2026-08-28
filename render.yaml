@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nemotron-workspace
+    env: node
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
