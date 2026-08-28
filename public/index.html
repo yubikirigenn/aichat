@@ -267,14 +267,14 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
   <div class="dHead">設定</div>
   <div class="dBody">
     <div class="field">
-      <label>OpenRouter API Key</label>
-      <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-or-v1-...">
-      <div class="note">APIキーはこのブラウザからRenderの中継サーバーへ送信され、OpenRouterへは中継サーバーから接続します。このHTML自体には埋め込みません。保存領域はブラウザ/オリジンごとに別なので、別PC・別ブラウザ・別URLへ移した場合は再入力が必要です。</div>
-      <div class="keyStatus" id="keyStatus">APIキー状態: 未確認</div>
+      <label>アクセスパスワード</label>
+      <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Renderで設定したパスワード">
+      <div class="note">Render側にあらかじめ設定したアクセスパスワードを入力します。OpenRouter APIキーはRenderの環境変数にのみ置き、このブラウザには送信しません。保存領域はブラウザ/オリジンごとに別なので、別PC・別ブラウザ・別URLへ移した場合は再入力が必要です。</div>
+      <div class="keyStatus" id="keyStatus">アクセスパスワード状態: 未確認</div>
       <div class="keyStatus" id="authDiag" style="display:none;white-space:pre-wrap"></div>
     </div>
     <div class="switchRow">
-      <div class="switchLabel"><strong>このブラウザにAPIキーを保存</strong><span>OFF時はタブを閉じるまでのみ保持</span></div>
+      <div class="switchLabel"><strong>このブラウザにアクセスパスワードを保存</strong><span>OFF時はタブを閉じるまでのみ保持</span></div>
       <label class="toggle"><input id="saveKeyToggle" type="checkbox"><span class="track"></span></label>
     </div>
     <div class="row2">
@@ -334,7 +334,7 @@ const KEY_INFO_URL = "/api/key-check";
 const DIAGNOSTICS_URL = "/api/diagnostics";
 const LS_SETTINGS = "nemotron_workspace_settings_v1";
 const LS_CHATS = "nemotron_workspace_chats_v1";
-const SS_KEY = "nemotron_workspace_api_key";
+const SS_KEY = "nemotron_workspace_access_password";
 const DB_NAME = "NemotronWorkspaceDB";
 const DB_VERSION = 1;
 const FILE_STORE = "files";
@@ -411,8 +411,8 @@ function setApiKey(key,save){
   localStorage.removeItem(SS_KEY);sessionStorage.removeItem(SS_KEY);
   if(key)(save?localStorage:sessionStorage).setItem(SS_KEY,key);
 }
-function proxyHeaders(key=getApiKey()){
-  return {"X-OpenRouter-Key":normalizeApiKey(key),"Content-Type":"application/json"};
+function proxyHeaders(){
+  return {"Content-Type":"application/json"};
 }
 function setKeyStatus(text,state=""){
   if(!els.keyStatus)return;
@@ -424,7 +424,7 @@ async function validateApiKey(key,{retryOnce=true}={}){
   if(!key)return {ok:false,status:0,reason:"missing"};
   const run=async()=>{
     try{
-      const r=await fetch(KEY_INFO_URL,{method:"POST",headers:proxyHeaders(key),signal:AbortSignal.timeout?AbortSignal.timeout(10000):undefined});
+      const r=await fetch(KEY_INFO_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({access_password:key}),signal:AbortSignal.timeout?AbortSignal.timeout(10000):undefined});
       let data=null,detail="";
       try{data=await r.json()}catch{try{detail=await r.text()}catch{}}
       return {ok:r.ok,status:r.status,data,detail};
@@ -1100,8 +1100,8 @@ async function performStreamRequest(body,onUpdate){
   const key=getApiKey();
   const res=await fetch(API_URL,{
     method:"POST",
-    headers:proxyHeaders(key),
-    body:JSON.stringify(body),
+    headers:proxyHeaders(),
+    body:JSON.stringify({...body,access_password:key}),
     signal:abortController.signal
   });
   if(!res.ok){
@@ -1176,7 +1176,7 @@ async function performStreamRequest(body,onUpdate){
 
 async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
   const key=getApiKey();
-  if(!key)throw new Error("OpenRouter APIキーが未入力です。設定から入力してください。");
+  if(!key)throw new Error("アクセスパスワードが未入力です。設定から入力してください。");
 
   const baseBody={
     model:MODEL,
@@ -1194,12 +1194,12 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
     return await performStreamRequest(baseBody,onUpdate);
   }catch(e){
     if(e.authFailure && !abortController?.signal?.aborted){
-      onEvent?.({id:"auth-check",name:"OpenRouter認証","status":"running",detail:`HTTP ${e.httpStatus} → APIキーを確認中`});
+      onEvent?.({id:"auth-check",name:"Renderアクセス認証","status":"running",detail:`HTTP ${e.httpStatus} → パスワードを確認中`});
       const check=await validateApiKey(key,{retryOnce:true});
 
       if(check.ok){
-        // The key endpoint accepts the same key, so the chat 401/403 was likely transient.
-        onEvent?.({id:"auth-check",name:"OpenRouter認証","status":"done",detail:"APIキーは有効 · 生成を1回再試行"});
+        // The proxy authentication check accepts the same password, so the chat 401/403 was likely transient.
+        onEvent?.({id:"auth-check",name:"Renderアクセス認証","status":"done",detail:"パスワードは有効 · 生成を1回再試行"});
         setStatus("認証を再確認 · 自動再試行","busy");
         await new Promise(r=>setTimeout(r,500));
         try{
@@ -1207,23 +1207,23 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
         }catch(retryError){
           if(!retryError.authFailure)throw retryError;
           retryError.userFacingAuth=true;
-          retryError.message=`OpenRouter認証エラー (${retryError.httpStatus})。APIキー自体は確認APIで有効でしたが、生成APIが認証を拒否しました。OpenRouter側の一時的な認証障害、キーのGuardrail/権限制限、またはアカウント側設定を確認してください。`;
-          onEvent?.({id:"auth-check",name:"OpenRouter認証","status":"failed",detail:"キーは有効だが生成APIが再度認証拒否"});
+          retryError.message=`OpenRouter認証エラー (${retryError.httpStatus})。アクセスパスワードは確認できましたが、生成APIが認証を拒否しました。Render側のAPIキー設定またはOpenRouter側の一時的な障害を確認してください。`;
+          onEvent?.({id:"auth-check",name:"Renderアクセス認証","status":"failed",detail:"パスワードは有効だが生成APIが再度認証拒否"});
           throw retryError;
         }
       }
 
       const authErr=new Error(
         check.status===401
-          ? "OpenRouter APIキーが認証されませんでした（401）。このHTMLを別ブラウザ・別PC・別URLで開いた場合、保存済みAPIキーは引き継がれないため設定から再入力してください。キーが正しい場合はOpenRouter側の一時障害も考えられるため、接続確認を再実行してください。"
+          ? "アクセスパスワードが認証されませんでした（401）。Render側の設定を確認して、正しいパスワードを入力してください。"
           : check.status===403
-          ? "OpenRouter APIキーは拒否されました（403）。キーの権限・Guardrail・利用制限・アカウント状態を確認してください。"
-          : "OpenRouter APIキーを確認できませんでした。ネットワークまたはOpenRouterへの接続を確認してください。"
+          ? "アクセスが拒否されました（403）。Render側のアクセス設定を確認してください。"
+          : "アクセスパスワードを確認できませんでした。Render中継またはOpenRouterへの接続を確認してください。"
       );
       authErr.httpStatus=check.status||e.httpStatus;
       authErr.authFailure=true;
       authErr.userFacingAuth=true;
-      onEvent?.({id:"auth-check",name:"OpenRouter認証","status":"failed",detail:`キー確認: ${check.status||"network error"}`});
+      onEvent?.({id:"auth-check",name:"Renderアクセス認証","status":"failed",detail:`パスワード確認: ${check.status||"network error"}`});
       throw authErr;
     }
 
@@ -1260,7 +1260,7 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
 async function sendMessage(){
   if(running){abortController?.abort();return}
   const text=els.prompt.value.trim();if(!text)return;
-  if(!getApiKey()){openSettings();setKeyStatus("APIキー状態: 未入力","bad");toast("設定画面からOpenRouter APIキーを入力してください");return}
+  if(!getApiKey()){openSettings();setKeyStatus("アクセスパスワード状態: 未入力","bad");toast("設定画面からアクセスパスワードを入力してください");return}
   const c=activeChat()||createChat();autoTitle(text);
   c.messages.push({role:"user",content:text,at:nowISO()});c.updatedAt=nowISO();els.prompt.value="";resizePrompt();persistChats();renderThread();renderChatList();
   const start=Date.now(),heavy=isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
@@ -1322,11 +1322,11 @@ async function sendMessage(){
   }catch(e){
     if(e.name==="AbortError"){uiMsg.error="生成を停止しました。";setStatus("停止","err")}
     else if(e.authFailure||e.userFacingAuth){
-      uiMsg.error=e.message||"OpenRouter認証エラー";
-      setStatus("APIキー認証エラー","err");
+      uiMsg.error=e.message||"Renderアクセス認証エラー";
+      setStatus("アクセス認証エラー","err");
       setTimeout(()=>{
         openSettings();
-        setKeyStatus(`認証エラー: HTTP ${e.httpStatus||401} · APIキーを確認してください`,"bad");
+        setKeyStatus(`認証エラー: HTTP ${e.httpStatus||401} · アクセスパスワードを確認してください`,"bad");
       },120);
     }else{uiMsg.error=e.message||String(e);setStatus("エラー","err")}
     const final={role:"assistant",content:uiMsg.content||"",reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
@@ -1352,7 +1352,7 @@ function openSettings(){
   els.temperature.value=String(settings.temperature);els.maxRounds.value=String(settings.maxRounds);els.reasoning.checked=!!settings.reasoning;els.web.checked=!!settings.web;
   els.webEngine.value=settings.webEngine;els.webResults.value=String(settings.webResults);els.webMaxCalls.value=String(settings.webMaxCalls||4);els.fileHistory.value=String(settings.fileHistory||20);els.systemPrompt.value=settings.systemPrompt||"";els.dark.checked=!!settings.dark;
   const key=getApiKey();
-  setKeyStatus(key?`APIキー状態: 入力済み（この環境） · ${location.protocol==="file:"?"ローカルHTML":location.host||location.protocol}`:"APIキー状態: 未入力",key?"":"bad");
+  setKeyStatus(key?`アクセスパスワード状態: 入力済み（この環境） · ${location.protocol==="file:"?"ローカルHTML":location.host||location.protocol}`:"アクセスパスワード状態: 未入力",key?"":"bad");
   if(!els.settings.open)els.settings.showModal();
 }
 function saveSettings(){
@@ -1379,7 +1379,7 @@ function errorSummary(status,payload){
 }
 async function runAuthDiagnostics(){
   const key=normalizeApiKey(els.apiKey.value||getApiKey());
-  if(!key){setAuthDiag("診断不可: APIキーが未入力です","bad");return}
+  if(!key){setAuthDiag("診断不可: アクセスパスワードが未入力です","bad");return}
 
   const btn=$("#authDiagBtn");
   btn.disabled=true;btn.textContent="診断中…";
@@ -1387,7 +1387,7 @@ async function runAuthDiagnostics(){
   try{
     lines.push("中継サーバーで認証・最小生成・Function Toolを確認中…");
     setAuthDiag(lines,"checking");
-    const r=await fetch(DIAGNOSTICS_URL,{method:"POST",headers:proxyHeaders(key),body:"{}"});
+    const r=await fetch(DIAGNOSTICS_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({access_password:key})});
     const p=await readResponseSafely(r);
     if(!r.ok){
       lines.push(errorSummary(r.status,p));
@@ -1403,12 +1403,12 @@ async function runAuthDiagnostics(){
     }
     lines.push("");
     if(result.ok){
-      lines.push("判定: キー認証・通常生成・Function Toolはいずれも正常です。");
+      lines.push("判定: パスワード認証・通常生成・Function Toolはいずれも正常です。");
     }else{
       const failed=(result.steps||[]).find(step=>!step.ok);
       lines.push(failed?.httpStatus===401
-        ?"判定: APIキーがOpenRouterで認証されていません。キーを確認して再入力してください。"
-        :"判定: 失敗した工程の詳細を確認してください。401の場合はAPIキー、502の場合はWeb検索経路を確認してください。");
+        ?"判定: アクセスパスワードが正しくありません。Render側の設定を確認してください。"
+        :"判定: 失敗した工程の詳細を確認してください。401の場合はパスワード、502の場合はWeb検索経路を確認してください。");
     }
     setAuthDiag(lines,result.ok?"ok":"bad");
   }catch(e){
@@ -1422,16 +1422,16 @@ async function runAuthDiagnostics(){
 
 async function testKey(){
   const key=normalizeApiKey(els.apiKey.value);
-  if(!key){toast("APIキーを入力してください");setKeyStatus("APIキー状態: 未入力","bad");return}
-  $("#testKeyBtn").disabled=true;$("#testKeyBtn").textContent="確認中…";setKeyStatus("APIキー状態: OpenRouterへ確認中…","checking");
+  if(!key){toast("アクセスパスワードを入力してください");setKeyStatus("アクセスパスワード状態: 未入力","bad");return}
+  $("#testKeyBtn").disabled=true;$("#testKeyBtn").textContent="確認中…";setKeyStatus("アクセスパスワード状態: Render経由で確認中…","checking");
   try{
     const result=await validateApiKey(key,{retryOnce:true});
     if(!result.ok)throw Object.assign(new Error(result.status?`HTTP ${result.status}`:"network error"),{status:result.status});
     const d=result.data||{};
-    setKeyStatus(`APIキー状態: 有効${d.data?.label?" · "+d.data.label:""}`,"ok");
-    toast("OpenRouter接続成功"+(d.data?.label?" · "+d.data.label:""));
+    setKeyStatus(`アクセスパスワード状態: 有効${d.data?.label?" · "+d.data.label:""}`,"ok");
+    toast("Render経由のOpenRouter接続成功"+(d.data?.label?" · "+d.data.label:""));
   }catch(e){
-    setKeyStatus(`APIキー状態: 確認失敗 · ${e.status?`HTTP ${e.status}`:e.message}`,"bad");
+    setKeyStatus(`アクセスパスワード状態: 確認失敗 · ${e.status?`HTTP ${e.status}`:e.message}`,"bad");
     toast("接続失敗: "+(e.status?`HTTP ${e.status}`:e.message));
   }finally{$("#testKeyBtn").disabled=false;$("#testKeyBtn").textContent="接続確認"}
 }
@@ -1441,7 +1441,7 @@ function exportChat(){
 
 $("#newChatBtn").onclick=()=>{if(!running){createChat();$("#sidebar")?.classList.remove("mobileOpen")}};
 $("#settingsBtn").onclick=openSettings;$("#topSettingsBtn").onclick=openSettings;$("#closeSettingsBtn").onclick=()=>els.settings.close();$("#saveSettingsBtn").onclick=saveSettings;$("#testKeyBtn").onclick=testKey;$("#authDiagBtn").onclick=runAuthDiagnostics;
-els.apiKey.addEventListener("input",()=>{setKeyStatus("APIキー状態: 未確認（入力内容が変更されました）","");if(els.authDiag)els.authDiag.style.display="none"});
+els.apiKey.addEventListener("input",()=>{setKeyStatus("アクセスパスワード状態: 未確認（入力内容が変更されました）","");if(els.authDiag)els.authDiag.style.display="none"});
 els.send.onclick=sendMessage;els.prompt.addEventListener("input",resizePrompt);els.prompt.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();sendMessage()}});
 $("#workspaceBtn").onclick=()=>togglePlay();$("#openPlayBtn").onclick=()=>togglePlay(true);$("#exportBtn").onclick=exportChat;
 $$(".playTab").forEach(b=>b.onclick=()=>setPlayTab(b.dataset.tab));

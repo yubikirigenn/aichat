@@ -6,15 +6,15 @@ Render からそのまま公開できる、Nemotron 3 Ultra 用のワークス�
 
 ```text
 ブラウザ
-  └─ /api/chat（同一オリジン、各ユーザーのキーを中継）
+  └─ /api/chat（同一オリジン、アクセスパスワードを送信）
         ↓
 Render の server.mjs
-  └─ ブラウザから受け取ったキーをOpenRouter用の認証へ変換
+  └─ Render環境変数のAPIキーでOpenRouterへ接続
         ↓
 OpenRouter / chat/completions
 ```
 
-ブラウザの JavaScript は OpenRouter へ直接アクセスせず、`/api/chat` と `/api/diagnostics` にだけ接続します。各ユーザーが設定画面へ自分のAPIキーを入力し、既定ではブラウザに保存しません。Renderのサーバー環境変数へ共通APIキーを置く必要はありません。
+ブラウザの JavaScript は OpenRouter へ直接アクセスせず、`/api/chat` と `/api/diagnostics` にだけ接続します。OpenRouter APIキーはRenderの環境変数にだけ置き、ブラウザには渡しません。各ユーザーは設定画面へアクセスパスワードを入力します。
 
 ## 主な機能
 
@@ -32,9 +32,12 @@ OpenRouter / chat/completions
 ## Render への設定
 
 1. GitHub でこのリポジトリを Render に接続します。
-2. Build Command は `npm ci`、Start Command は `npm start` のままにします。
-3. 任意で `PUBLIC_APP_URL` に Render の URL を設定します。
-4. 公開後、設定画面から各ユーザーが自分のOpenRouter APIキーを入力します。
+2. Environment Variables に次の2つを設定します。
+   - `OPENROUTER_API_KEY`: OpenRouterのAPIキー
+   - `APP_ACCESS_PASSWORD`: アプリに入力するアクセスパスワード
+3. Build Command は `npm ci`、Start Command は `npm start` のままにします。
+4. 任意で `PUBLIC_APP_URL` に Render の URL を設定します。
+5. 公開後、設定画面からアクセスパスワードを入力します。
 
 `render.yaml` を使う場合は Blueprint として読み込めます。API キーはこのリポジトリへコミットしないでください。
 
@@ -42,7 +45,7 @@ OpenRouter / chat/completions
 
 ```bash
 npm install
-npm start
+OPENROUTER_API_KEY=sk-or-v1-... APP_ACCESS_PASSWORD='十分に長いパスワード' npm start
 ```
 
-ブラウザで `http://localhost:3000` を開き、設定画面からAPIキーを入力します。キーは「このブラウザにAPIキーを保存」をONにした場合だけローカル保存されます。
+ブラウザで `http://localhost:3000` を開き、設定画面からアクセスパスワードを入力します。パスワードは「このブラウザにアクセスパスワードを保存」をONにした場合だけローカル保存されます。
