@@ -21,7 +21,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .sidebar{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-width:0}
 .brand{height:64px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}
 .logo{width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#7ce4c1,#4db18e);display:grid;place-items:center;font-weight:900;color:#08261d}
-.brandText{min-width:0}.brandTitle{font-weight:800;font-size:14px;letter-spacing:-.02em}.brandSub{font-size:10px;color:var(--muted);margin-top:2px}
+.brandText{min-width:0}.brandTitle{font-weight:800;font-size:14px;letter-spacing:-.02em}
 .sideActions{padding:12px;display:grid;grid-template-columns:1fr 40px;gap:7px}.newChat,.iconBtn,.plainBtn,.miniBtn{
   border:1px solid var(--line);background:var(--panel2);border-radius:12px;min-height:38px
 }
@@ -34,7 +34,6 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .sideFooter{padding:10px;border-top:1px solid var(--line);display:grid;gap:7px}.modelCard{border:1px solid var(--line);background:var(--panel2);border-radius:13px;padding:10px}
 .modelTop{display:flex;align-items:center;justify-content:space-between;gap:8px}.modelName{font-size:10.5px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .freeBadge{font-size:8.5px;border-radius:999px;padding:2px 6px;background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);font-weight:800}
-.modelMeta{font-size:9px;color:var(--muted);margin-top:6px;line-height:1.45}
 .main{min-width:0;display:flex;flex-direction:column;height:100dvh;position:relative}
 .topbar{height:64px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:color-mix(in srgb,var(--bg) 84%,transparent);backdrop-filter:blur(18px);z-index:4}
 .topLeft,.topRight{display:flex;align-items:center;gap:8px;min-width:0}.mobileMenu{display:none}
@@ -49,8 +48,6 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .empty{min-height:58vh;display:grid;place-items:center;text-align:center}.emptyInner{max-width:650px}
 .hero{width:56px;height:56px;border-radius:18px;margin:0 auto 18px;background:linear-gradient(145deg,#7ce4c1,#4db18e);display:grid;place-items:center;color:#08261d;font-weight:900;font-size:22px;box-shadow:0 16px 40px rgba(77,177,142,.18)}
 .empty h1{font-size:clamp(27px,4vw,42px);letter-spacing:-.055em;margin:0}.empty p{color:var(--muted);font-size:13px;line-height:1.7;max-width:560px;margin:12px auto 0}
-.suggestions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:22px}.suggestion{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px;text-align:left}
-.suggestion:hover{background:var(--panel2);transform:translateY(-1px)}.suggestion strong{font-size:11.5px;display:block}.suggestion span{font-size:9.5px;color:var(--muted);display:block;margin-top:4px}
 .message{display:grid;grid-template-columns:30px minmax(0,1fr);gap:11px}.avatar{width:30px;height:30px;border-radius:10px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;font-weight:900;font-size:10px}
 .message.user .avatar{background:var(--accent);color:var(--accentText)}.bubble{min-width:0;padding-top:3px;font-size:14px;line-height:1.72;overflow-wrap:anywhere}
 .message.user .bubble{white-space:pre-wrap}.bubble p{margin:.15em 0 .9em}.bubble p:last-child{margin-bottom:0}.bubble h1,.bubble h2,.bubble h3{letter-spacing:-.03em;margin:1.1em 0 .45em;line-height:1.25}
@@ -136,7 +133,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
 .toastHost{position:fixed;right:14px;bottom:14px;z-index:50;display:flex;flex-direction:column;gap:7px}.toast{background:var(--text);color:var(--bg);padding:9px 11px;border-radius:10px;box-shadow:var(--shadow);font-size:10px;max-width:330px}
 .hiddenInput{display:none}
 @media(max-width:980px){:root{--play:390px}.sidebar{display:none}.sidebar.mobileOpen{display:flex;position:fixed;z-index:30;left:0;top:0;bottom:0;width:min(300px,86vw);box-shadow:var(--shadow)}.app{grid-template-columns:1fr}.mobileMenu{display:inline-grid}.chatTitle{max-width:260px}}
-@media(max-width:760px){.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{border-left:0}.topbar{height:58px;padding:0 10px}.topBtn{padding:0 8px}.chatScroll{padding:22px 12px 165px}.composerWrap{padding:36px 10px max(10px,env(safe-area-inset-bottom))}.suggestions{grid-template-columns:1fr}.playBody{grid-template-columns:118px minmax(0,1fr)}.row2{grid-template-columns:1fr}.message{grid-template-columns:27px minmax(0,1fr);gap:8px}.avatar{width:27px;height:27px}.bubble{font-size:13.5px}}
+@media(max-width:760px){.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{border-left:0}.topbar{height:58px;padding:0 10px}.topBtn{padding:0 8px}.chatScroll{padding:22px 12px 165px}.composerWrap{padding:36px 10px max(10px,env(safe-area-inset-bottom))}.playBody{grid-template-columns:118px minmax(0,1fr)}.row2{grid-template-columns:1fr}.message{grid-template-columns:27px minmax(0,1fr);gap:8px}.avatar{width:27px;height:27px}.bubble{font-size:13.5px}}
 </style>
 </head>
 <body>
@@ -144,7 +141,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="logo">N</div>
-      <div class="brandText"><div class="brandTitle">Nemotron Workspace</div><div class="brandSub">OpenRouter · Local Playground · v1.6</div></div>
+      <div class="brandText"><div class="brandTitle">Nemotron Workspace</div></div>
     </div>
     <div class="sideActions">
       <button class="newChat" id="newChatBtn">＋ 新しいチャット</button>
@@ -155,7 +152,6 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
     <div class="sideFooter">
       <div class="modelCard">
         <div class="modelTop"><div class="modelName">Nemotron 3 Ultra 550B A55B</div><span class="freeBadge">FREE</span></div>
-        <div class="modelMeta">55B active / 550B total · 1M context<br>Tool Calling · Reasoning · 65K max output</div>
       </div>
     </div>
   </aside>
@@ -193,7 +189,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
               <span class="chip on" id="timeChip">日時</span>
               <span class="chip on">Charts</span>
             </div>
-            <textarea class="prompt" id="prompt" placeholder="メッセージを入力…  例: Playgroundのindex.htmlを読んで、UIを修正して"></textarea>
+            <textarea class="prompt" id="prompt" placeholder="メッセージを入力…"></textarea>
             <div class="composerBottom">
               <div class="composerLeft">
                 <button class="cBtn" id="openPlayBtn" title="Playground">⌘</button>
@@ -242,12 +238,10 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
         </div>
 
         <div class="planPanel" id="planPanel">
-          <div class="panelHint">重いタスクではAIが最初に計画を作成し、各工程を更新しながら実行します。</div>
           <div id="planPanelContent" style="margin-top:10px"></div>
         </div>
 
         <div class="toolPanel" id="toolPanel">
-          <div class="panelHint">このチャットで実行されたブラウザ内Toolの履歴です。</div>
           <div id="toolLog" style="margin-top:10px"></div>
         </div>
 
@@ -269,7 +263,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
     <div class="field">
       <label>アクセスパスワード</label>
       <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Renderで設定したパスワード">
-      <div class="note">Render側にあらかじめ設定したアクセスパスワードを入力します。OpenRouter APIキーはRenderの環境変数にのみ置き、このブラウザには送信しません。保存領域はブラウザ/オリジンごとに別なので、別PC・別ブラウザ・別URLへ移した場合は再入力が必要です。</div>
+      <div class="note">Renderで設定したアクセスパスワードを入力します。OpenRouter APIキーはこのブラウザに送信しません。</div>
       <div class="keyStatus" id="keyStatus">アクセスパスワード状態: 未確認</div>
       <div class="keyStatus" id="authDiag" style="display:none;white-space:pre-wrap"></div>
     </div>
@@ -301,7 +295,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
       <div class="field"><label>Web検索最大Call / 応答</label><input id="webMaxCallsInput" type="number" min="1" max="20" step="1"></div>
       <div class="field"><label>Workspace保持履歴 / ファイル</label><input id="fileHistoryInput" type="number" min="1" max="50" step="1"></div>
     </div>
-    <div class="note warn">Nemotron 3 Ultra Free自体は無料ですが、OpenRouter Web Searchは検索エンジン側の料金が別途発生します。Server Toolが502の場合は旧Web Search pluginへ自動で1回フォールバックします。さらにFree endpointでは、NVIDIAの案内上、入力内容がセキュリティおよび製品改善目的で記録されるため、機密情報・個人情報は送信しないでください。</div>
+    <div class="note warn">Web検索には検索エンジン側の料金が発生する場合があります。機密情報・個人情報は送信しないでください。</div>
     <div class="field">
       <label>追加System Prompt</label>
       <textarea id="systemPromptInput" placeholder="任意の追加指示"></textarea>
@@ -753,9 +747,9 @@ function renderMessage(m){
 function renderThread(){
   const c=activeChat();els.thread.innerHTML="";
   if(!c||!c.messages.length){
-    const e=document.createElement("div");e.className="empty";e.innerHTML=`<div class="emptyInner"><div class="hero">N</div><h1>作業を、会話の続きから。</h1><p>Nemotron 3 UltraがWeb検索・Playground・グラフを使い、実行中のToolを表示しながら作業します。</p><div class="suggestions"><button class="suggestion" data-p="PlaygroundにWebアプリのひな形を作って。重いタスクとして計画を立て、index.htmlを作成してPreviewまで確認して"><strong>Webアプリを作る</strong><span>計画 → ファイル作成 → Preview</span></button><button class="suggestion" data-p="Playgroundのファイル一覧を確認して、既存コードを読み、改善点を調べて差分編集して"><strong>既存コードを改善</strong><span>全書き直しではなく差分編集</span></button><button class="suggestion" data-p="最新情報が必要なのでWeb検索して、出典を付けて詳しく調査して"><strong>Webで調査</strong><span>OpenRouter Web Searchを必要時に実行</span></button><button class="suggestion" data-p="Playgroundのファイル構成を確認し、バグを探して修正計画を立ててから直して"><strong>デバッグ</strong><span>読取 → 計画 → 修正 → 再確認</span></button></div></div>`;
+    const e=document.createElement("div");e.className="empty";e.innerHTML=`<div class="emptyInner"><div class="hero">N</div><h1>新しいチャット</h1></div>`;
     els.thread.appendChild(e);
-    $$(".suggestion").forEach(x=>x.onclick=()=>{els.prompt.value=x.dataset.p;resizePrompt();els.prompt.focus()});return;
+    return;
   }
   for(const m of c.messages) if(!m.internal) els.thread.appendChild(renderMessage(m));
   scrollBottom();
