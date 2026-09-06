@@ -25,6 +25,7 @@ export const PROVIDERS = Object.freeze({
     label: "Experiential Labs",
     baseUrl: "https://api.experientiallabs.ai/v1",
     keyEnv: "EXPERIENTIAL_LABS_API_KEY",
+    supportsReasoning: false,
     freeLabel: "Free catalog",
     docsUrl: "https://platform.experientiallabs.ai/models",
   }),

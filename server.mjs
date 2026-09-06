@@ -223,6 +223,9 @@ app.post("/api/chat", async (req, res) => {
   };
   delete forwardedBody.provider;
   if (selected.provider !== "openrouter") delete forwardedBody.plugins;
+  // Experiential Labs exposes an OpenAI-compatible endpoint but rejects the
+  // OpenRouter-style { reasoning: { enabled: true } } request field.
+  if (access.provider.supportsReasoning === false) delete forwardedBody.reasoning;
 
   try {
     const upstream = await providerFetch(selected.provider, "/chat/completions", access.apiKey, {
