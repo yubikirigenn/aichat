@@ -186,6 +186,10 @@ app.post("/api/chat", async (req, res) => {
     );
     res.setHeader("Cache-Control", upstream.headers.get("cache-control") || "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    // Send an SSE comment immediately so proxies flush the stream before the first token.
+    res.write(": stream-open\n\n");
 
     if (upstream.body) {
       Readable.fromWeb(upstream.body).on("error", (error) => {

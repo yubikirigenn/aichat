@@ -629,7 +629,7 @@ function makeThinkingDetails(msg,{streaming=false}={}){
   if(!r)return null;
   const d=document.createElement("details");
   d.className="thinking";
-  d.open=!!msg.thinkingOpen;
+  d.open=typeof msg.thinkingOpen==="boolean"?msg.thinkingOpen:streaming;
   const tokenText=msg.reasoning_tokens!=null?`${Number(msg.reasoning_tokens).toLocaleString()} tokens`:streaming?"生成中":"推論内容";
   d.innerHTML=`<summary><span class="thinkChevron">›</span><span class="thinkLabel">Thinking <span class="thinkMeta">${escapeHTML(tokenText)}</span></span><span class="thinkAction"><span class="whenClosed">内容を表示</span><span class="whenOpen">閉じる</span></span></summary><div class="thinkingBody">${escapeHTML(r)}</div>`;
   d.addEventListener("toggle",()=>{msg.thinkingOpen=d.open});
@@ -697,10 +697,11 @@ function activityDetailText(a){
   return detail.replace(/^(読取|差分編集|作成|検索)\s+/," ").trim();
 }
 function renderActivityHTML(activity=[]){
-  if(!activity.length)return "";
-  const active=activity.filter(x=>x.status==="running"||x.status==="requested").length;
+  const visible=activity.filter(x=>!(x.name==="Nemotron"&&x.status==="done"));
+  if(!visible.length)return "";
+  const active=visible.filter(x=>x.status==="running"||x.status==="requested").length;
   let h=`<div class="agentActivity"><div class="activityHead"><span>Agent Activity</span><span>${active?`${active}件 実行中`:""}</span></div><div class="activityList">`;
-  for(const a of activity){
+  for(const a of visible){
     const st=a.status||"pending";
     const icon=activityGlyph(a.name,st),label=activityCopy(a.name,st),detail=activityDetailText(a),state=st==="done"?"":activityStateLabel(st);
     h+=`<div class="activityItem ${escapeHTML(st)}"><div class="activityIcon" aria-hidden="true">${icon}</div><div class="activityMain"><div class="activityName">${escapeHTML(label)}</div>${detail?`<div class="activityDetail">${escapeHTML(detail)}</div>`:""}</div>${state?`<div class="activityState">${state}</div>`:""}</div>`;
@@ -849,6 +850,17 @@ function renderThread(){
   for(const m of c.messages) if(!m.internal) els.thread.appendChild(renderMessage(m));
   scrollBottom();
 }
+function scheduleStreamingAssistantRender(target,msg){
+  if(msg.streamRenderFrame)return;
+  msg.streamRenderFrame=requestAnimationFrame(()=>{
+    msg.streamRenderFrame=0;
+    renderStreamingAssistant(target,msg);
+  });
+}
+function flushStreamingAssistantRender(target,msg){
+  if(msg.streamRenderFrame){cancelAnimationFrame(msg.streamRenderFrame);msg.streamRenderFrame=0}
+  renderStreamingAssistant(target,msg);
+}
 function renderStreamingAssistant(target,msg){
   const existingThinking=target.querySelector(".thinking");
   if(existingThinking)msg.thinkingOpen=existingThinking.open;
@@ -856,6 +868,7 @@ function renderStreamingAssistant(target,msg){
   if(msg.activity?.length){const a=document.createElement("div");a.innerHTML=renderActivityHTML(msg.activity);b.append(...a.children)}
   const r=getReasoningText(msg);
   if(r){
+    if(msg.thinkingOpen===undefined)msg.thinkingOpen=true;
     const d=makeThinkingDetails(msg,{streaming:true});
     if(d)b.appendChild(d);
   }
@@ -1364,11 +1377,12 @@ async function sendMessage(){
       const {msg,usage,webFallback}=await streamRound(msgs,forcedPlan&&rounds===1,(partial)=>{
         uiMsg.content=partial.content||"";uiMsg.reasoning=partial.reasoning||"";uiMsg.reasoning_details=partial.reasoning_details;
         syncPartialToolActivity(uiMsg,partial);
-        uiMsg.planSnapshot=structuredCloneSafe(c.plan);renderStreamingAssistant(node,uiMsg);
+        uiMsg.planSnapshot=structuredCloneSafe(c.plan);scheduleStreamingAssistantRender(node,uiMsg);
       },ev=>{
         upsertActivity(uiMsg,ev.id,ev.name,ev.status,ev.detail);
-        renderStreamingAssistant(node,uiMsg);
+        scheduleStreamingAssistantRender(node,uiMsg);
       });
+      flushStreamingAssistantRender(node,uiMsg);
       upsertActivity(uiMsg,`model-round-${rounds}`,"Nemotron","done",msg.tool_calls?.length?`${msg.tool_calls.length}件のToolを要求`:"回答を生成");
       if(usage){totalCost+=Number(usage.cost||0);totalOut+=Number(usage.completion_tokens||0)}
       if(webFallback)uiMsg.webFallback=true;
@@ -1398,7 +1412,7 @@ async function sendMessage(){
         persistChats();continue;
       }
       uiMsg.content=msg.content||"";uiMsg.reasoning=msg.reasoning||"";uiMsg.reasoning_details=msg.reasoning_details;uiMsg.annotations=msg.annotations;
-      const final={role:"assistant",content:uiMsg.content,at:nowISO(),toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),annotations:uiMsg.annotations,planSnapshot:structuredCloneSafe(c.plan),
+      const final={role:"assistant",content:uiMsg.content,at:nowISO(),toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),annotations:uiMsg.annotations,planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,
         meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
       if(msg.reasoning)final.reasoning=msg.reasoning;if(msg.reasoning_details)final.reasoning_details=msg.reasoning_details;
       const reasonTok=usage?.completion_tokens_details?.reasoning_tokens??usage?.reasoning_tokens;if(reasonTok!=null)final.reasoning_tokens=reasonTok;
@@ -1418,7 +1432,7 @@ async function sendMessage(){
         setKeyStatus(`認証エラー: HTTP ${e.httpStatus||401} · アクセスパスワードを確認してください`,"bad");
       },120);
     }else{uiMsg.error=e.message||String(e);setStatus("エラー","err")}
-    const final={role:"assistant",content:uiMsg.content||"",reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
+    const final={role:"assistant",content:uiMsg.content||"",reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
     c.messages.push(final);c.updatedAt=nowISO();c.messages=c.messages.filter(m=>!m.internal);persistChats();renderThread();renderChatList();
   }finally{
     running=false;abortController=null;els.send.classList.remove("stop");els.send.textContent="↑";
