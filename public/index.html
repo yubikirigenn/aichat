@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<title>Nemotron Workspace v1.6</title>
+<title>Nemotron Workspace</title>
 <style>
 :root{
   --bg:#f6f7f9;--panel:#ffffff;--panel2:#f0f2f5;--panel3:#e8ebef;--text:#17191c;--muted:#6f7680;
@@ -132,6 +132,63 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
 .note{font-size:9px;color:var(--muted);line-height:1.55}.note.warn{color:var(--warn)}.dFoot{padding:11px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:7px}.dFoot button{height:34px;border-radius:10px;padding:0 12px;font-size:10px;font-weight:750;border:1px solid var(--line);background:var(--panel2)}.dFoot .primary{background:var(--accent);color:var(--accentText);border-color:var(--accent)}
 .toastHost{position:fixed;right:14px;bottom:14px;z-index:50;display:flex;flex-direction:column;gap:7px}.toast{background:var(--text);color:var(--bg);padding:9px 11px;border-radius:10px;box-shadow:var(--shadow);font-size:10px;max-width:330px}
 .hiddenInput{display:none}
+/* ChatGPT / Gemini-style shell: quiet chrome, one conversation column, compact work trace. */
+:root{
+  --bg:#ffffff;--panel:#ffffff;--panel2:#f7f7f8;--panel3:#ececf1;--text:#2f2f2f;--muted:#6b6b6b;
+  --line:#e5e5e5;--accent:#2f2f2f;--accentText:#ffffff;--shadow:0 2px 12px rgba(0,0,0,.08);--sidebar:248px;--play:440px;
+}
+[data-theme="dark"]{
+  --bg:#212121;--panel:#2f2f2f;--panel2:#171717;--panel3:#3a3a3a;--text:#ececec;--muted:#a7a7a7;
+  --line:#444444;--accent:#ffffff;--accentText:#202020;--shadow:0 2px 18px rgba(0,0,0,.22);
+}
+html,body{background:var(--bg);color:var(--text)}
+.app{grid-template-columns:var(--sidebar) minmax(0,1fr)}
+.sidebar{border-right:0;background:var(--panel2)}
+.brand{height:58px;padding:0 14px;border-bottom:0}
+.logo{width:30px;height:30px;border-radius:50%;font-size:13px;box-shadow:none}
+.brandTitle{font-size:13px;font-weight:700}
+.sideActions{padding:5px 10px 16px;grid-template-columns:1fr 38px;gap:4px}
+.newChat,.iconBtn{min-height:38px;border:0;background:transparent;border-radius:9px}
+.newChat{text-align:left;padding:0 11px;font-size:11px;font-weight:650}
+.iconBtn{font-size:15px;color:var(--muted)}
+.newChat:hover,.iconBtn:hover,.plainBtn:hover,.miniBtn:hover{background:var(--panel3)}
+.sideLabel{padding:3px 16px 7px;font-size:10px;letter-spacing:.02em;text-transform:none;color:var(--muted)}
+.chatList{padding:0 8px}.chatItem{border-radius:9px;padding:10px 34px 10px 12px;margin:1px 0}.chatItem:hover,.chatItem.active{background:var(--panel3)}
+.chatItemTitle{font-size:11px}.chatItemMeta{display:none}.chatDelete{top:7px}
+.sideFooter{padding:12px 10px;border-top:0}.modelCard{border:0;background:transparent;padding:8px 6px}
+.modelName{font-size:10px;color:var(--muted)}.freeBadge{font-size:8px}
+.topbar{height:58px;padding:0 24px;border-bottom:1px solid var(--line);background:var(--bg);backdrop-filter:none}
+.topLeft,.topRight{gap:4px}.chatTitle{font-size:13px;font-weight:650}.runStatus{font-size:9px;margin-top:3px}
+.topBtn{height:34px;border:0;background:transparent;border-radius:8px;padding:0 9px;font-size:10.5px;font-weight:600;color:var(--muted)}
+.topBtn:hover{background:var(--panel2);color:var(--text)}.workspaceBtn.active{background:var(--accent);color:var(--accentText)}
+.content.withPlay{grid-template-columns:minmax(0,1fr) var(--play)}
+.chatScroll{padding:42px 24px 188px}.thread{width:min(780px,100%);gap:30px}
+.empty{min-height:calc(100dvh - 330px)}.emptyInner{max-width:680px}.hero{width:44px;height:44px;border-radius:50%;margin:0 auto 16px;font-size:17px;box-shadow:none}
+.empty h1{font-size:26px;font-weight:650;letter-spacing:-.04em}.empty p{font-size:13px}
+.message{grid-template-columns:30px minmax(0,1fr);gap:12px}.avatar{width:30px;height:30px;border:0;border-radius:50%;background:transparent;font-size:10px;color:var(--muted)}
+.message.assistant .avatar{background:linear-gradient(145deg,#7ce4c1,#4db18e);color:#08261d}.message.assistant .bubble{padding-top:1px;font-size:14px;line-height:1.76}
+.message.user{grid-template-columns:minmax(0,1fr) 30px;margin-left:auto;max-width:720px}.message.user .avatar{grid-column:2;grid-row:1;background:var(--accent);color:var(--accentText)}
+.message.user .bubble{grid-column:1;grid-row:1;justify-self:end;max-width:min(100%,650px);padding:10px 14px;background:var(--panel2);border-radius:18px;line-height:1.65}
+.thinking{margin:0 0 13px;border:0;background:transparent;border-radius:0;overflow:visible}.thinking summary{padding:3px 0 7px;font-size:11px;color:var(--muted);grid-template-columns:18px minmax(0,1fr) auto;gap:7px}
+.thinkChevron{width:18px;height:18px;background:transparent;font-size:14px;color:var(--muted)}.thinkLabel{font-weight:650;color:var(--muted)}.thinkAction{font-size:9.5px;color:var(--muted)}
+.thinkingBody{border:0;border-left:1px solid var(--line);border-radius:0;background:transparent!important;margin:0 0 0 8px;padding:3px 0 4px 16px;font:11px/1.7 "SFMono-Regular",Consolas,monospace;color:var(--muted);max-height:300px}
+.agentActivity{margin:0 0 13px;border:0;background:transparent;border-radius:0;overflow:visible}.activityHead{padding:0 0 6px;border-bottom:0;font-size:10.5px;font-weight:650;letter-spacing:0;color:var(--muted)}.activityHead span:last-child{font-weight:500}
+.activityList{border-left:1px solid var(--line);margin-left:8px;padding-left:15px}.activityItem{position:relative;grid-template-columns:20px minmax(0,1fr) auto;gap:7px;padding:5px 0;border-top:0;font-size:11.5px;align-items:start}
+.activityIcon{width:18px;height:18px;margin-left:-25px;border:0;border-radius:6px;background:var(--bg);font-size:13px;color:var(--muted)}
+.activityItem.running .activityIcon{width:15px;height:15px;margin:2px 0 0 -23px;border:1.5px solid var(--warn);border-right-color:transparent;border-radius:50%;background:var(--bg)}
+.activityItem.done .activityIcon{background:var(--panel2);border:1px solid var(--line);color:var(--muted)}.activityItem.failed .activityIcon{background:color-mix(in srgb,var(--danger) 12%,var(--bg));border:1px solid var(--danger);color:var(--danger)}.activityItem.requested .activityIcon{background:var(--bg);border:0;color:var(--blue)}
+.activityName{font-weight:500;color:var(--text)}.activityDetail{font-size:10px;margin-top:1px;color:var(--muted)}.activityState{font-size:9px;padding-top:2px;color:var(--muted)}
+.meta{gap:5px;margin-top:10px;font-size:9px}.pill{border:0;background:var(--panel2);padding:3px 7px}
+.toolEvents{gap:5px;margin:10px 0}.toolEvent{border:1px solid var(--line);background:transparent;border-radius:10px}.toolEvent summary{padding:8px 9px;font-size:10px}.toolEvent pre{background:var(--panel2);font-size:9px}
+.sources{margin-top:10px}.sourceChip{background:var(--panel2);border:0;padding:5px 8px}
+.errorCard{padding:11px;border-radius:12px;font-size:11px}
+.composerWrap{padding:46px 24px max(18px,env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 38%)}
+.composer{width:min(780px,100%);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:8px 11px;background:var(--panel)}
+.chips{gap:10px;padding:0 8px 2px;align-items:center}.chip{border:0;background:transparent;padding:3px 0;font-size:10px;color:var(--muted)}.chips #modelChip{font-weight:700;color:var(--text)}.chips #reasonChip,.chips #planChip,.chips #webChip{display:flex}.chips #fetchChip,.chips #timeChip,.chips .chip:last-child{display:none}
+.prompt{min-height:50px;padding:9px 8px 4px;font-size:15px;line-height:1.55}.composerBottom{padding:2px 3px}.composerLeft{gap:2px}.cBtn{width:34px;height:32px;min-width:34px;border-radius:50%;font-size:15px}.cBtn:hover{background:var(--panel2)}.sendBtn{width:34px;height:34px;border-radius:50%;font-size:15px}
+.playground{border-left:1px solid var(--line);background:var(--panel)}.playHead{height:52px;padding:0 14px}.playTitle{font-size:12px}.playTabs{gap:2px}.playTab{font-size:10px;padding:7px 8px}.playTab.active{background:var(--panel2)}
+.fileToolbar{padding:9px;border-bottom:1px solid var(--line)}.fileToolbar button{border:0;background:var(--panel2);border-radius:8px}.planPanel,.toolPanel{padding:13px}.planCard{border:1px solid var(--line);background:transparent;border-radius:12px}.logItem{border:1px solid var(--line);background:var(--panel2);border-radius:9px}
+.panelHint{font-size:10px}
 @media(max-width:980px){:root{--play:390px}.sidebar{display:none}.sidebar.mobileOpen{display:flex;position:fixed;z-index:30;left:0;top:0;bottom:0;width:min(300px,86vw);box-shadow:var(--shadow)}.app{grid-template-columns:1fr}.mobileMenu{display:inline-grid}.chatTitle{max-width:260px}}
 @media(max-width:760px){.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{border-left:0}.topbar{height:58px;padding:0 10px}.topBtn{padding:0 8px}.chatScroll{padding:22px 12px 165px}.composerWrap{padding:36px 10px max(10px,env(safe-area-inset-bottom))}.playBody{grid-template-columns:118px minmax(0,1fr)}.row2{grid-template-columns:1fr}.message{grid-template-columns:27px minmax(0,1fr);gap:8px}.avatar{width:27px;height:27px}.bubble{font-size:13.5px}}
 </style>
@@ -192,8 +249,8 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);c
             <textarea class="prompt" id="prompt" placeholder="メッセージを入力…"></textarea>
             <div class="composerBottom">
               <div class="composerLeft">
-                <button class="cBtn" id="openPlayBtn" title="Playground">⌘</button>
-                <button class="cBtn" id="attachBtn" title="ファイルを読み込む">＋File</button>
+                <button class="cBtn" id="openPlayBtn" title="Playgroundを開く" aria-label="Playgroundを開く">⌘</button>
+                <button class="cBtn" id="attachBtn" title="ファイルを添付" aria-label="ファイルを添付">＋</button>
               </div>
               <button class="sendBtn" id="sendBtn" title="送信">↑</button>
             </div>
@@ -601,14 +658,52 @@ function friendlyToolName(name){
 function activityStateLabel(st){
   return st==="running"?"実行中":st==="done"?"完了":st==="failed"?"失敗":st==="requested"?"要求":"待機";
 }
+function activityGlyph(name,status){
+  if(status==="running")return "";
+  const n=String(name||"");
+  if(n==="Nemotron")return "✦";
+  if(n.includes("Web Search"))return "⌕";
+  if(n.includes("グラフ"))return "▥";
+  if(n.includes("計画"))return "☷";
+  if(n.includes("現在日時"))return "◷";
+  if(/ファイル(作成|編集|追記|名前変更|削除)/.test(n))return "✎";
+  if(/ファイル(一覧|読取|検索|コード確認)/.test(n))return "▤";
+  return "·";
+}
+function activityCopy(name,status){
+  const n=String(name||"");
+  const done=status==="done",failed=status==="failed";
+  if(n==="Nemotron")return done?"回答を生成しました":failed?"回答の生成に失敗しました":status==="requested"?"応答を準備しています":"考えています…";
+  if(n.includes("Web Search"))return done?"Webを検索しました":failed?"Web検索に失敗しました":"Webを検索しています";
+  if(n.includes("グラフ"))return done?"グラフを作成しました":failed?"グラフの作成に失敗しました":"グラフを作成しています";
+  if(n.includes("計画作成"))return done?"計画を作成しました":failed?"計画の作成に失敗しました":"計画を作成しています";
+  if(n.includes("計画更新"))return done?"計画を更新しました":failed?"計画の更新に失敗しました":"計画を更新しています";
+  if(n.includes("計画完了"))return done?"計画を完了しました":failed?"計画の完了に失敗しました":"計画を完了しています";
+  if(n.includes("ファイル一覧"))return done?"ファイル一覧を確認しました":failed?"ファイル一覧を確認できませんでした":"ファイル一覧を確認しています";
+  if(n.includes("ファイル読取"))return done?"ファイルを読み込みました":failed?"ファイルを読み込めませんでした":"ファイルを読み込んでいます";
+  if(n.includes("ファイル作成"))return done?"ファイルを作成しました":failed?"ファイルを作成できませんでした":"ファイルを作成しています";
+  if(n.includes("差分編集"))return done?"ファイルを編集しました":failed?"ファイルを編集できませんでした":"ファイルを編集しています";
+  if(n.includes("追記"))return done?"ファイルに追記しました":failed?"ファイルに追記できませんでした":"ファイルに追記しています";
+  if(n.includes("ファイル検索"))return done?"ファイルを検索しました":failed?"ファイルを検索できませんでした":"ファイルを検索しています";
+  if(n.includes("名前変更"))return done?"ファイル名を変更しました":failed?"ファイル名を変更できませんでした":"ファイル名を変更しています";
+  if(n.includes("削除"))return done?"ファイルを削除しました":failed?"ファイルを削除できませんでした":"ファイルを削除しています";
+  if(n.includes("コード確認"))return done?"ファイルを確認しました":failed?"ファイルを確認できませんでした":"ファイルを確認しています";
+  if(n.includes("現在日時"))return done?"現在日時を確認しました":failed?"現在日時を確認できませんでした":"現在日時を確認しています";
+  return done?`${n}を実行しました`:failed?`${n}に失敗しました`:`${n}を実行しています`;
+}
+function activityDetailText(a){
+  const detail=String(a?.detail||"").trim();
+  if(!detail||detail==="NemotronがToolを要求"||detail==="回答を生成"||/^Plan (create|update|finish)$/i.test(detail)||detail.includes("推論 / Tool選択")||detail.includes("計画作成を要求中"))return "";
+  return detail.replace(/^(読取|差分編集|作成|検索)\s+/," ").trim();
+}
 function renderActivityHTML(activity=[]){
   if(!activity.length)return "";
   const active=activity.filter(x=>x.status==="running"||x.status==="requested").length;
-  let h=`<div class="agentActivity"><div class="activityHead"><span>AGENT ACTIVITY</span><span>${active?`${active}件 実行中`:"完了"}</span></div><div class="activityList">`;
+  let h=`<div class="agentActivity"><div class="activityHead"><span>Agent Activity</span><span>${active?`${active}件 実行中`:""}</span></div><div class="activityList">`;
   for(const a of activity){
     const st=a.status||"pending";
-    const icon=st==="done"?"✓":st==="failed"?"!":st==="requested"?"→":"";
-    h+=`<div class="activityItem ${escapeHTML(st)}"><div class="activityIcon">${icon}</div><div class="activityMain"><div class="activityName">${escapeHTML(a.name||"処理")}</div>${a.detail?`<div class="activityDetail">${escapeHTML(a.detail)}</div>`:""}</div><div class="activityState">${activityStateLabel(st)}</div></div>`;
+    const icon=activityGlyph(a.name,st),label=activityCopy(a.name,st),detail=activityDetailText(a),state=st==="done"?"":activityStateLabel(st);
+    h+=`<div class="activityItem ${escapeHTML(st)}"><div class="activityIcon" aria-hidden="true">${icon}</div><div class="activityMain"><div class="activityName">${escapeHTML(label)}</div>${detail?`<div class="activityDetail">${escapeHTML(detail)}</div>`:""}</div>${state?`<div class="activityState">${state}</div>`:""}</div>`;
   }
   return h+"</div></div>";
 }
