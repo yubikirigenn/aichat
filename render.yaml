@@ -9,6 +9,12 @@ services:
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: BAI_API_KEY
+        sync: false
+      - key: EXPERIENTIAL_LABS_API_KEY
+        sync: false
       - key: APP_ACCESS_PASSWORD
         sync: false
       - key: PUBLIC_APP_URL

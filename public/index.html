@@ -186,6 +186,7 @@ html,body{background:var(--bg);color:var(--text)}
 .composer{width:min(780px,100%);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:8px 11px;background:var(--panel)}
 .chips{gap:10px;padding:0 8px 2px;align-items:center}.chip{border:0;background:transparent;padding:3px 0;font-size:10px;color:var(--muted)}.chips #modelChip{font-weight:700;color:var(--text)}.chips #reasonChip,.chips #planChip,.chips #webChip{display:flex}.chips #fetchChip,.chips #timeChip,.chips .chip:last-child{display:none}
 .prompt{min-height:50px;padding:9px 8px 4px;font-size:15px;line-height:1.55}.composerBottom{padding:2px 3px}.composerLeft{gap:2px}.cBtn{width:34px;height:32px;min-width:34px;border-radius:50%;font-size:15px}.cBtn:hover{background:var(--panel2)}.sendBtn{width:34px;height:34px;border-radius:50%;font-size:15px}
+.imageAttachments{display:flex;flex-wrap:wrap;gap:7px;padding:4px 7px 2px}.imageAttachments:empty{display:none}.imageAttachment{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}.imageAttachment img{display:block;width:100%;height:100%;object-fit:cover}.imageAttachment button{position:absolute;right:3px;top:3px;width:19px;height:19px;border:0;border-radius:50%;background:rgba(0,0,0,.68);color:#fff;font-size:13px;line-height:18px;padding:0}.imageAttachmentName{position:absolute;left:3px;right:3px;bottom:3px;padding:2px 3px;border-radius:4px;background:rgba(0,0,0,.66);color:#fff;font-size:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chatImages{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px}.chatImage{display:block;max-width:min(360px,100%);max-height:280px;border:1px solid var(--line);border-radius:12px;object-fit:contain;background:var(--panel2)}.modelCapability{font-size:9px;color:var(--muted);line-height:1.5}.modelCapability.vision{color:var(--ok)}.modelCapability.missing{color:var(--warn)}
 .playground{border-left:1px solid var(--line);background:var(--panel)}.playHead{height:52px;padding:0 14px}.playTitle{font-size:12px}.playTabs{gap:2px}.playTab{font-size:10px;padding:7px 8px}.playTab.active{background:var(--panel2)}
 .fileToolbar{padding:9px;border-bottom:1px solid var(--line)}.fileToolbar button{border:0;background:var(--panel2);border-radius:8px}.planPanel,.toolPanel{padding:13px}.planCard{border:1px solid var(--line);background:transparent;border-radius:12px}.logItem{border:1px solid var(--line);background:var(--panel2);border-radius:9px}
 .panelHint{font-size:10px}
@@ -208,7 +209,7 @@ html,body{background:var(--bg);color:var(--text)}
     <div class="chatList" id="chatList"></div>
     <div class="sideFooter">
       <div class="modelCard">
-        <div class="modelTop"><div class="modelName">Nemotron 3 Ultra 550B A55B</div><span class="freeBadge">FREE</span></div>
+        <div class="modelTop"><div class="modelName" id="sideModelName">Nemotron 3 Ultra</div><span class="freeBadge" id="sideModelBadge">FREE</span></div>
       </div>
     </div>
   </aside>
@@ -246,11 +247,13 @@ html,body{background:var(--bg);color:var(--text)}
               <span class="chip on" id="timeChip">日時</span>
               <span class="chip on">Charts</span>
             </div>
+            <div class="imageAttachments" id="imageAttachments" aria-live="polite"></div>
             <textarea class="prompt" id="prompt" placeholder="メッセージを入力…"></textarea>
             <div class="composerBottom">
               <div class="composerLeft">
                 <button class="cBtn" id="openPlayBtn" title="Playgroundを開く" aria-label="Playgroundを開く">⌘</button>
                 <button class="cBtn" id="attachBtn" title="ファイルを添付" aria-label="ファイルを添付">＋</button>
+                <button class="cBtn" id="imageBtn" title="画像を追加" aria-label="画像を追加">▧</button>
               </div>
               <button class="sendBtn" id="sendBtn" title="送信">↑</button>
             </div>
@@ -311,6 +314,7 @@ html,body{background:var(--bg);color:var(--text)}
 </div>
 
 <input id="filePicker" class="hiddenInput" type="file" multiple accept=".txt,.md,.html,.htm,.css,.js,.mjs,.cjs,.ts,.tsx,.jsx,.json,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sh,.sql,.xml,.yaml,.yml,.toml,.ini,.csv,.svg">
+<input id="imagePicker" class="hiddenInput" type="file" multiple accept="image/*">
 <input id="folderPicker" class="hiddenInput" type="file" multiple webkitdirectory directory>
 <input id="workspaceImportPicker" class="hiddenInput" type="file" accept=".json,application/json">
 
@@ -320,10 +324,15 @@ html,body{background:var(--bg);color:var(--text)}
     <div class="field">
       <label>アクセスパスワード</label>
       <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Renderで設定したパスワード">
-      <div class="note">Renderで設定したアクセスパスワードを入力します。OpenRouter APIキーはこのブラウザに送信しません。</div>
+      <div class="note">Renderで設定したアクセスパスワードを入力します。プロバイダのAPIキーはこのブラウザに送信しません。</div>
       <div class="keyStatus" id="keyStatus">アクセスパスワード状態: 未確認</div>
       <div class="keyStatus" id="authDiag" style="display:none;white-space:pre-wrap"></div>
     </div>
+    <div class="row2">
+      <div class="field"><label>プロバイダ</label><select id="providerSelect"></select></div>
+      <div class="field"><label>モデル</label><select id="modelSelect"></select></div>
+    </div>
+    <div class="modelCapability" id="modelCapability"></div>
     <div class="switchRow">
       <div class="switchLabel"><strong>このブラウザにアクセスパスワードを保存</strong><span>OFF時はタブを閉じるまでのみ保持</span></div>
       <label class="toggle"><input id="saveKeyToggle" type="checkbox"><span class="track"></span></label>
@@ -379,7 +388,8 @@ html,body{background:var(--bg);color:var(--text)}
 <script>
 "use strict";
 
-const MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+const DEFAULT_PROVIDER = "openrouter";
+const DEFAULT_MODEL_ID = "nvidia/nemotron-3-ultra-550b-a55b:free";
 const API_URL = "/api/chat";
 const KEY_INFO_URL = "/api/key-check";
 const DIAGNOSTICS_URL = "/api/diagnostics";
@@ -389,6 +399,16 @@ const SS_KEY = "nemotron_workspace_access_password";
 const DB_NAME = "NemotronWorkspaceDB";
 const DB_VERSION = 1;
 const FILE_STORE = "files";
+const FALLBACK_MODELS = [
+  {provider:"openrouter",providerLabel:"OpenRouter",id:DEFAULT_MODEL_ID,name:"NVIDIA Nemotron 3 Ultra",vision:false,supportsTools:true,freeLabel:":free endpoint",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"openrouter/free",name:"Free Models Router",vision:true,supportsTools:true,freeLabel:":free endpoint",configured:true},
+  {provider:"groq",providerLabel:"Groq",id:"openai/gpt-oss-120b",name:"GPT OSS 120B",vision:false,supportsTools:true,freeLabel:"Free plan枠",configured:false},
+  {provider:"groq",providerLabel:"Groq",id:"qwen/qwen3.8-27b",name:"Qwen3.8 27B",vision:true,supportsTools:true,freeLabel:"Free plan枠",configured:false},
+  {provider:"bai",providerLabel:"B.AI",id:"glm-5.3-flash",name:"GLM-5.3 Flash",vision:true,supportsTools:true,freeLabel:"API 0 Credits",configured:false},
+  {provider:"bai",providerLabel:"B.AI",id:"qwen3.8-flash",name:"Qwen3.8 Flash",vision:true,supportsTools:true,freeLabel:"API 0 Credits",configured:false},
+  {provider:"bai",providerLabel:"B.AI",id:"mimo-v2.5",name:"MiMo-V2.5",vision:true,supportsTools:true,freeLabel:"API 0 Credits",configured:false},
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"qwen3.8-27b",name:"Qwen3.8 27B",vision:true,supportsTools:true,freeLabel:"Free catalog",configured:false}
+];
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -401,11 +421,13 @@ const els = {
   temperature:$("#temperatureInput"), maxRounds:$("#maxRoundsInput"), reasoning:$("#reasoningToggle"), web:$("#webToggle"),
   webEngine:$("#webEngineSelect"), webResults:$("#webResultsSelect"), webMaxCalls:$("#webMaxCallsInput"), fileHistory:$("#fileHistoryInput"), keyStatus:$("#keyStatus"), authDiag:$("#authDiag"), systemPrompt:$("#systemPromptInput"), dark:$("#darkToggle"),
   fileList:$("#fileList"), codeEditor:$("#codeEditor"), lineNums:$("#lineNums"), currentPath:$("#currentPath"),
-  filePicker:$("#filePicker"), planPanelContent:$("#planPanelContent"), toolLog:$("#toolLog"), previewFrame:$("#previewFrame"),
+  filePicker:$("#filePicker"), imagePicker:$("#imagePicker"), imageAttachments:$("#imageAttachments"), planPanelContent:$("#planPanelContent"), toolLog:$("#toolLog"), previewFrame:$("#previewFrame"),
+  providerSelect:$("#providerSelect"), modelSelect:$("#modelSelect"), modelCapability:$("#modelCapability"), modelChip:$("#modelChip"), sideModelName:$("#sideModelName"), sideModelBadge:$("#sideModelBadge"),
   webChip:$("#webChip"), reasonChip:$("#reasonChip"), planChip:$("#planChip")
 };
 
 const defaultSettings = {
+  provider:DEFAULT_PROVIDER, model:DEFAULT_MODEL_ID,
   planner:"auto", maxTokens:16384, temperature:0.4, maxRounds:16, reasoning:true, web:true,
   webEngine:"auto", webResults:5, webMaxCalls:4, fileHistory:20, systemPrompt:"", dark:false, saveKey:false
 };
@@ -418,6 +440,9 @@ let abortController = null;
 let running = false;
 let toolLog = [];
 let previewTimer = null;
+let modelCatalog = [...FALLBACK_MODELS];
+let providerCatalog = [];
+let pendingImages = [];
 
 function safeJSON(s, fallback){ try{return s?JSON.parse(s):fallback}catch{return fallback} }
 function nowISO(){ return new Date().toISOString() }
@@ -427,6 +452,55 @@ function bytes(s){ return new Blob([s]).size }
 function fmtBytes(n){ if(n<1024)return n+" B"; if(n<1048576)return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(1)+" MB" }
 function escapeHTML(s=""){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])) }
 function toast(msg){ const d=document.createElement("div");d.className="toast";d.textContent=msg;$("#toastHost").appendChild(d);setTimeout(()=>d.remove(),3200) }
+const MAX_PENDING_IMAGES=4;
+const MAX_IMAGE_DATA_BYTES=1800000;
+function safeImageDataUrl(value){return typeof value==="string"&&/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(value)}
+function dataUrlBytes(value){const encoded=String(value).split(",",2)[1]||"";return Math.ceil(encoded.length*3/4)}
+function loadImage(url){return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error("画像を読み込めませんでした"));image.src=url})}
+async function imageFileToAttachment(file){
+  if(!file?.type?.startsWith("image/"))throw new Error("画像ファイルではありません");
+  if(file.size>12*1024*1024)throw new Error(`${file.name||"画像"} は12MB以下にしてください`);
+  const objectUrl=URL.createObjectURL(file);
+  try{
+    const image=await loadImage(objectUrl),maxSide=1600,scale=Math.min(1,maxSide/Math.max(image.naturalWidth||image.width,image.naturalHeight||image.height));
+    const width=Math.max(1,Math.round((image.naturalWidth||image.width)*scale)),height=Math.max(1,Math.round((image.naturalHeight||image.height)*scale));
+    const canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;
+    const ctx=canvas.getContext("2d");if(!ctx)throw new Error("画像処理に対応していないブラウザです");
+    ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);ctx.drawImage(image,0,0,width,height);
+    let dataUrl="";
+    for(const quality of [0.82,0.68,0.54,0.4]){dataUrl=canvas.toDataURL("image/jpeg",quality);if(dataUrlBytes(dataUrl)<=MAX_IMAGE_DATA_BYTES)break}
+    if(dataUrlBytes(dataUrl)>MAX_IMAGE_DATA_BYTES)throw new Error(`${file.name||"画像"} を小さくできませんでした`);
+    return {id:uid(),name:file.name||"clipboard-image.jpg",mimeType:"image/jpeg",dataUrl,width,height};
+  }finally{URL.revokeObjectURL(objectUrl)}
+}
+function renderPendingImages(){
+  els.imageAttachments.innerHTML="";
+  for(const image of pendingImages){
+    const item=document.createElement("div");item.className="imageAttachment";item.title=image.name;
+    const img=document.createElement("img");img.src=image.dataUrl;img.alt=image.name;item.appendChild(img);
+    const name=document.createElement("div");name.className="imageAttachmentName";name.textContent=image.name;item.appendChild(name);
+    const remove=document.createElement("button");remove.type="button";remove.textContent="×";remove.title="画像を削除";remove.onclick=()=>{pendingImages=pendingImages.filter(entry=>entry.id!==image.id);renderPendingImages()};item.appendChild(remove);
+    els.imageAttachments.appendChild(item);
+  }
+}
+async function addImageFiles(files){
+  const list=[...files].filter(file=>file?.type?.startsWith("image/"));
+  if(!list.length)return;
+  const available=Math.max(0,MAX_PENDING_IMAGES-pendingImages.length);
+  for(const file of list.slice(0,available)){
+    try{pendingImages.push(await imageFileToAttachment(file))}
+    catch(error){toast(error.message||"画像を追加できませんでした")}
+  }
+  if(list.length>available)toast(`画像は${MAX_PENDING_IMAGES}枚まで添付できます`);
+  renderPendingImages();els.prompt.focus();
+}
+function appendChatImages(parent,images){
+  const valid=(images||[]).filter(image=>safeImageDataUrl(image?.dataUrl));
+  if(!valid.length)return;
+  const wrap=document.createElement("div");wrap.className="chatImages";
+  for(const image of valid){const img=document.createElement("img");img.className="chatImage";img.src=image.dataUrl;img.alt=image.name||"添付画像";img.loading="lazy";wrap.appendChild(img)}
+  parent.appendChild(wrap);
+}
 function setStatus(text,state="ok"){ els.statusText.textContent=text;els.statusDot.className="statusDot"+(state==="busy"?" busy":state==="err"?" err":"") }
 function scrollBottom(){ requestAnimationFrame(()=>{els.chatScroll.scrollTop=els.chatScroll.scrollHeight}) }
 function activeChat(){ return chats.find(c=>c.id===activeChatId) }
@@ -441,7 +515,9 @@ function persistChats(){
   }catch(e){
     console.warn(e);
     try{
-      const tiny=compact.slice(0,12).map(c=>({...c,messages:(c.messages||[]).slice(-30)}));
+      const tiny=compact.slice(0,12).map(c=>({...c,messages:(c.messages||[]).slice(-30).map(message=>message.images?.length
+        ? {...message,images:message.images.map(({dataUrl,...image})=>({...image,omitted:true}))}
+        : message)}));
       localStorage.setItem(LS_CHATS,JSON.stringify(tiny));
       toast("履歴容量が大きいため、古い会話を省いて保存しました");
     }catch(e2){ console.warn(e2); toast("会話履歴の保存容量を超えました") }
@@ -475,7 +551,8 @@ async function validateApiKey(key,{retryOnce=true}={}){
   if(!key)return {ok:false,status:0,reason:"missing"};
   const run=async()=>{
     try{
-      const r=await fetch(KEY_INFO_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({access_password:key}),signal:AbortSignal.timeout?AbortSignal.timeout(10000):undefined});
+      const selected=selectedModel();
+      const r=await fetch(KEY_INFO_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({access_password:key,provider:selected.provider,model:selected.id}),signal:AbortSignal.timeout?AbortSignal.timeout(10000):undefined});
       let data=null,detail="";
       try{data=await r.json()}catch{try{detail=await r.text()}catch{}}
       return {ok:r.ok,status:r.status,data,detail};
@@ -496,10 +573,65 @@ async function validateApiKey(key,{retryOnce=true}={}){
 function applyTheme(){
   document.documentElement.dataset.theme = settings.dark ? "dark" : "light";
 }
+function selectedModel(){
+  return modelCatalog.find(entry=>entry.provider===settings.provider&&entry.id===settings.model)
+    || modelCatalog.find(entry=>entry.provider===DEFAULT_PROVIDER&&entry.id===DEFAULT_MODEL_ID)
+    || modelCatalog[0]
+    || FALLBACK_MODELS[0];
+}
+function providerEntries(){
+  if(providerCatalog.length)return providerCatalog;
+  const ids=[...new Set(modelCatalog.map(entry=>entry.provider))];
+  return ids.map(id=>({id,label:modelCatalog.find(entry=>entry.provider===id)?.providerLabel||id,freeLabel:modelCatalog.find(entry=>entry.provider===id)?.freeLabel||"",configured:false}));
+}
+function renderModelControls(){
+  if(!els.providerSelect||!els.modelSelect)return;
+  const providers=providerEntries();
+  els.providerSelect.innerHTML="";
+  for(const provider of providers){
+    const option=document.createElement("option");option.value=provider.id;option.textContent=provider.label+(provider.configured===false&&providerCatalog.length?" · APIキー未設定":"");els.providerSelect.appendChild(option);
+  }
+  if(!providers.some(provider=>provider.id===settings.provider))settings.provider=providers[0]?.id||DEFAULT_PROVIDER;
+  els.providerSelect.value=settings.provider;
+  const entries=modelCatalog.filter(entry=>entry.provider===settings.provider);
+  els.modelSelect.innerHTML="";
+  for(const [vision,label] of [[true,"画像対応"],[false,"画像非対応"]]){
+    const group=document.createElement("optgroup");group.label=label;
+    for(const entry of entries.filter(item=>item.vision===vision)){
+      const option=document.createElement("option");option.value=entry.id;option.textContent=`${entry.name} · ${entry.freeLabel}`;group.appendChild(option);
+    }
+    if(group.children.length)els.modelSelect.appendChild(group);
+  }
+  if(!entries.some(entry=>entry.id===settings.model))settings.model=entries[0]?.id||DEFAULT_MODEL_ID;
+  els.modelSelect.value=settings.model;
+  const selected=selectedModel();
+  const provider=providers.find(item=>item.id===selected.provider);
+  const configured=providerCatalog.length?provider?.configured!==false:true;
+  els.modelCapability.textContent=`${selected.vision?"画像対応":"画像非対応"} · ${selected.freeLabel}${configured?"":" · APIキー未設定"}`;
+  els.modelCapability.className="modelCapability"+(selected.vision?" vision":"")+(!configured?" missing":"");
+}
 function syncChips(){
+  const selected=selectedModel();
+  els.modelChip.textContent=`${selected.providerLabel||selected.provider} · ${selected.name}`;
+  els.sideModelName.textContent=selected.name;
+  els.sideModelBadge.textContent=selected.freeLabel||"FREE";
   els.reasonChip.style.display = settings.reasoning ? "" : "none";
-  els.webChip.style.display = settings.web ? "" : "none";
+  els.webChip.style.display = settings.web && selected.provider==="openrouter" ? "" : "none";
   els.planChip.textContent = "Planner: " + (settings.planner==="auto"?"Auto":settings.planner==="always"?"Always":"Off");
+  renderModelControls();
+}
+async function loadModelCatalog(){
+  try{
+    const response=await fetch("/api/models",{headers:{Accept:"application/json"}});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();
+    if(Array.isArray(data.models)&&data.models.length)modelCatalog=data.models;
+    if(Array.isArray(data.providers))providerCatalog=data.providers;
+    if(data.default&&!settings.model){settings.provider=data.default.provider;settings.model=data.default.model}
+  }catch(error){
+    console.warn("モデルカタログを読み込めませんでした",error);
+  }
+  renderModelControls();syncChips();
 }
 
 function createChat(){
@@ -837,7 +969,10 @@ function renderMessage(m){
       b.appendChild(meta);
     }
     if(m.error){const e=document.createElement("div");e.className="errorCard";e.textContent=m.error;b.appendChild(e)}
-  }else b.textContent=m.content||"";
+  }else{
+    appendChatImages(b,m.images);
+    if(m.content){const body=document.createElement("div");body.textContent=m.content;b.appendChild(body)}
+  }
   wrap.append(av,b);return wrap;
 }
 function renderThread(){
@@ -1161,6 +1296,9 @@ ${settings.systemPrompt?`\nユーザー追加System Prompt:\n${settings.systemPr
 function apiMessages(c){
   return [{role:"system",content:buildSystemPrompt()},...c.messages.filter(m=>["user","assistant","tool"].includes(m.role)).map(m=>{
     const x={role:m.role,content:m.content??""};
+    if(m.role==="user"&&m.images?.some(image=>safeImageDataUrl(image?.dataUrl))){
+      x.content=[{type:"text",text:m.content||"この画像を確認してください。"},...m.images.filter(image=>safeImageDataUrl(image?.dataUrl)).map(image=>({type:"image_url",image_url:{url:image.dataUrl}}))];
+    }
     if(m.role==="assistant"&&m.tool_calls)x.tool_calls=m.tool_calls;
     if(m.role==="assistant"&&m.reasoning)x.reasoning=m.reasoning;
     if(m.role==="assistant"&&m.reasoning_details)x.reasoning_details=m.reasoning_details;
@@ -1170,7 +1308,8 @@ function apiMessages(c){
 }
 function buildTools(includeServerWeb=true){
   const tools=[...functionTools];
-  if(settings.web && includeServerWeb){
+  const selected=selectedModel();
+  if(settings.web && includeServerWeb && selected.provider==="openrouter"){
     const per=Number(settings.webResults||5),calls=clamp(Number(settings.webMaxCalls||4),1,20);
     tools.unshift(
       {type:"openrouter:web_fetch",parameters:{engine:"openrouter",max_uses:Math.min(calls,10),max_content_tokens:50000}},
@@ -1208,7 +1347,9 @@ async function performStreamRequest(body,onUpdate){
   });
   if(!res.ok){
     let detail="";try{detail=await res.text()}catch{}
-    const e=new Error(`OpenRouter ${res.status}: ${detail.slice(0,2000)}`);
+    const provider=selectedModel();
+    const label=provider.providerLabel||provider.provider;
+    const e=new Error(`${label} ${res.status}: ${detail.slice(0,2000)}`);
     e.httpStatus=res.status;
     e.serverToolFailure=serverToolFailure(e,res.status,detail);
     e.authFailure=res.status===401||res.status===403;
@@ -1280,16 +1421,21 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
   const key=getApiKey();
   if(!key)throw new Error("アクセスパスワードが未入力です。設定から入力してください。");
 
+  const selected=selectedModel();
+  const providerLabel=selected.providerLabel||selected.provider;
   const baseBody={
-    model:MODEL,
+    provider:selected.provider,
+    model:selected.id,
     messages,
-    tools:buildTools(true),
-    tool_choice:forcedPlan?{type:"function",function:{name:"plan_create"}}:"auto",
     stream:true,
     stream_options:{include_usage:true},
     temperature:Number(settings.temperature),
     max_tokens:Number(settings.maxTokens)
   };
+  if(selected.supportsTools){
+    baseBody.tools=buildTools(true);
+    baseBody.tool_choice=forcedPlan?{type:"function",function:{name:"plan_create"}}:"auto";
+  }
   if(settings.reasoning)baseBody.reasoning={enabled:true,exclude:false};
 
   try{
@@ -1309,7 +1455,7 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
         }catch(retryError){
           if(!retryError.authFailure)throw retryError;
           retryError.userFacingAuth=true;
-          retryError.message=`OpenRouter認証エラー (${retryError.httpStatus})。アクセスパスワードは確認できましたが、生成APIが認証を拒否しました。Render側のAPIキー設定またはOpenRouter側の一時的な障害を確認してください。`;
+          retryError.message=`${providerLabel}認証エラー (${retryError.httpStatus})。アクセスパスワードは確認できましたが、生成APIが認証を拒否しました。Render側の${providerLabel} APIキー設定またはプロバイダ側の一時的な障害を確認してください。`;
           onEvent?.({id:"auth-check",name:"Renderアクセス認証","status":"failed",detail:"パスワードは有効だが生成APIが再度認証拒否"});
           throw retryError;
         }
@@ -1320,7 +1466,7 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
           ? "アクセスパスワードが認証されませんでした（401）。Render側の設定を確認して、正しいパスワードを入力してください。"
           : check.status===403
           ? "アクセスが拒否されました（403）。Render側のアクセス設定を確認してください。"
-          : "アクセスパスワードを確認できませんでした。Render中継またはOpenRouterへの接続を確認してください。"
+          : `アクセスパスワードを確認できませんでした。Render中継または${providerLabel}への接続を確認してください。`
       );
       authErr.httpStatus=check.status||e.httpStatus;
       authErr.authFailure=true;
@@ -1361,18 +1507,23 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
 }
 async function sendMessage(){
   if(running){abortController?.abort();return}
-  const text=els.prompt.value.trim();if(!text)return;
+  const text=els.prompt.value.trim();if(!text&&!pendingImages.length)return;
+  const selected=selectedModel();
+  if(pendingImages.length&&!selected.vision){
+    toast("画像入力には画像対応モデルを選択してください");openSettings();return;
+  }
   if(!getApiKey()){openSettings();setKeyStatus("アクセスパスワード状態: 未入力","bad");toast("設定画面からアクセスパスワードを入力してください");return}
-  const c=activeChat()||createChat();autoTitle(text);
-  c.messages.push({role:"user",content:text,at:nowISO()});c.updatedAt=nowISO();els.prompt.value="";resizePrompt();persistChats();renderThread();renderChatList();
-  const start=Date.now(),heavy=isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
-  const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1","Nemotron","running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom();
-  let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&!c.plan?.status?.includes?.("running");
+  const images=pendingImages.map(image=>({...image}));
+  const c=activeChat()||createChat();autoTitle(text||"画像チャット");
+  c.messages.push({role:"user",content:text,images,at:nowISO()});c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread();renderChatList();
+  const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
+  const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom();
+  let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
   try{
     while(rounds<Number(settings.maxRounds)){
       rounds++;setStatus(rounds===1&&forcedPlan?"計画を作成中":`実行中 · round ${rounds}`,"busy");
       const msgs=apiMessages(c);
-      upsertActivity(uiMsg,`model-round-${rounds}`,"Nemotron","running",rounds===1&&forcedPlan?"計画作成を要求中":`round ${rounds} · 推論 / Tool選択`);
+      upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"running",rounds===1&&forcedPlan?"計画作成を要求中":`round ${rounds} · 推論 / Tool選択`);
       renderStreamingAssistant(node,uiMsg);
       const {msg,usage,webFallback}=await streamRound(msgs,forcedPlan&&rounds===1,(partial)=>{
         uiMsg.content=partial.content||"";uiMsg.reasoning=partial.reasoning||"";uiMsg.reasoning_details=partial.reasoning_details;
@@ -1383,7 +1534,7 @@ async function sendMessage(){
         scheduleStreamingAssistantRender(node,uiMsg);
       });
       flushStreamingAssistantRender(node,uiMsg);
-      upsertActivity(uiMsg,`model-round-${rounds}`,"Nemotron","done",msg.tool_calls?.length?`${msg.tool_calls.length}件のToolを要求`:"回答を生成");
+      upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"done",msg.tool_calls?.length?`${msg.tool_calls.length}件のToolを要求`:"回答を生成");
       if(usage){totalCost+=Number(usage.cost||0);totalOut+=Number(usage.completion_tokens||0)}
       if(webFallback)uiMsg.webFallback=true;
       const webUrls=new Set((msg.annotations||[]).filter(a=>a?.url_citation?.url).map(a=>a.url_citation.url));
@@ -1451,6 +1602,7 @@ function setPlayTab(tab){
   if(tab==="preview")buildPreview();if(tab==="plan")renderPlan();if(tab==="tools")renderToolLog();
 }
 function openSettings(){
+  renderModelControls();
   els.apiKey.value=getApiKey();els.saveKey.checked=!!settings.saveKey;els.planner.value=settings.planner;els.maxTokens.value=String(settings.maxTokens);
   els.temperature.value=String(settings.temperature);els.maxRounds.value=String(settings.maxRounds);els.reasoning.checked=!!settings.reasoning;els.web.checked=!!settings.web;
   els.webEngine.value=settings.webEngine;els.webResults.value=String(settings.webResults);els.webMaxCalls.value=String(settings.webMaxCalls||4);els.fileHistory.value=String(settings.fileHistory||20);els.systemPrompt.value=settings.systemPrompt||"";els.dark.checked=!!settings.dark;
@@ -1460,7 +1612,7 @@ function openSettings(){
 }
 function saveSettings(){
   const key=normalizeApiKey(els.apiKey.value),save=els.saveKey.checked;
-  settings={...settings,saveKey:save,planner:els.planner.value,maxTokens:Number(els.maxTokens.value),temperature:clamp(Number(els.temperature.value||0.4),0,2),maxRounds:clamp(Number(els.maxRounds.value||16),1,30),
+  settings={...settings,provider:els.providerSelect.value,model:els.modelSelect.value,saveKey:save,planner:els.planner.value,maxTokens:Number(els.maxTokens.value),temperature:clamp(Number(els.temperature.value||0.4),0,2),maxRounds:clamp(Number(els.maxRounds.value||16),1,30),
     reasoning:els.reasoning.checked,web:els.web.checked,webEngine:els.webEngine.value,webResults:Number(els.webResults.value),webMaxCalls:clamp(Number(els.webMaxCalls.value||4),1,20),fileHistory:clamp(Number(els.fileHistory.value||20),1,50),systemPrompt:els.systemPrompt.value,dark:els.dark.checked};
   setApiKey(key,save);persistSettings();applyTheme();syncChips();els.settings.close();toast("設定を保存しました")
 }
@@ -1486,16 +1638,17 @@ async function runAuthDiagnostics(){
 
   const btn=$("#authDiagBtn");
   btn.disabled=true;btn.textContent="診断中…";
-  const lines=["OpenRouter 401診断",`環境: ${location.protocol}//${location.host||"(local file)"}`,"経路: ブラウザ → Render中継 → OpenRouter",""];
+  const selected=selectedModel();
+  const lines=[`${selected.providerLabel||selected.provider} 接続診断`,`環境: ${location.protocol}//${location.host||"(local file)"}`,`経路: ブラウザ → Render中継 → ${selected.providerLabel||selected.provider}`,""];
   try{
     lines.push("中継サーバーで認証・最小生成・Function Toolを確認中…");
     setAuthDiag(lines,"checking");
-    const r=await fetch(DIAGNOSTICS_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({access_password:key})});
+    const r=await fetch(DIAGNOSTICS_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({access_password:key,provider:selected.provider,model:selected.id})});
     const p=await readResponseSafely(r);
     if(!r.ok){
       lines.push(errorSummary(r.status,p));
       lines.push("");
-      lines.push("判定: Render中継またはOpenRouterへの接続で診断を完了できませんでした。");
+      lines.push("判定: Render中継または選択プロバイダへの接続で診断を完了できませんでした。");
       setAuthDiag(lines,"bad");
       return;
     }
@@ -1511,7 +1664,7 @@ async function runAuthDiagnostics(){
       const failed=(result.steps||[]).find(step=>!step.ok);
       lines.push(failed?.httpStatus===401
         ?"判定: アクセスパスワードが正しくありません。Render側の設定を確認してください。"
-        :"判定: 失敗した工程の詳細を確認してください。401の場合はパスワード、502の場合はWeb検索経路を確認してください。");
+        :"判定: 失敗した工程の詳細を確認してください。401の場合はパスワード、502の場合は中継先の接続を確認してください。");
     }
     setAuthDiag(lines,result.ok?"ok":"bad");
   }catch(e){
@@ -1526,31 +1679,36 @@ async function runAuthDiagnostics(){
 async function testKey(){
   const key=normalizeApiKey(els.apiKey.value);
   if(!key){toast("アクセスパスワードを入力してください");setKeyStatus("アクセスパスワード状態: 未入力","bad");return}
-  $("#testKeyBtn").disabled=true;$("#testKeyBtn").textContent="確認中…";setKeyStatus("アクセスパスワード状態: Render経由で確認中…","checking");
+  const selected=selectedModel();
+  $("#testKeyBtn").disabled=true;$("#testKeyBtn").textContent="確認中…";setKeyStatus(`アクセスパスワード状態: ${selected.providerLabel||selected.provider}経由で確認中…`,"checking");
   try{
     const result=await validateApiKey(key,{retryOnce:true});
     if(!result.ok)throw Object.assign(new Error(result.status?`HTTP ${result.status}`:"network error"),{status:result.status});
     const d=result.data||{};
     setKeyStatus(`アクセスパスワード状態: 有効${d.data?.label?" · "+d.data.label:""}`,"ok");
-    toast("Render経由のOpenRouter接続成功"+(d.data?.label?" · "+d.data.label:""));
+    toast(`Render経由の${selected.providerLabel||selected.provider}接続成功`+(d.data?.label?" · "+d.data.label:""));
   }catch(e){
     setKeyStatus(`アクセスパスワード状態: 確認失敗 · ${e.status?`HTTP ${e.status}`:e.message}`,"bad");
     toast("接続失敗: "+(e.status?`HTTP ${e.status}`:e.message));
   }finally{$("#testKeyBtn").disabled=false;$("#testKeyBtn").textContent="接続確認"}
 }
 function exportChat(){
-  const c=activeChat();if(!c)return;downloadBlob((c.title||"chat").replace(/[\\/:*?"<>|]/g,"_")+".json",JSON.stringify({format:"nemotron-chat-v1",model:MODEL,chat:c},null,2),"application/json")
+  const c=activeChat();if(!c)return;const selected=selectedModel();downloadBlob((c.title||"chat").replace(/[\\/:*?"<>|]/g,"_")+".json",JSON.stringify({format:"nemotron-chat-v2",provider:selected.provider,model:selected.id,chat:c},null,2),"application/json")
 }
 
 $("#newChatBtn").onclick=()=>{if(!running){createChat();$("#sidebar")?.classList.remove("mobileOpen")}};
 $("#settingsBtn").onclick=openSettings;$("#topSettingsBtn").onclick=openSettings;$("#closeSettingsBtn").onclick=()=>els.settings.close();$("#saveSettingsBtn").onclick=saveSettings;$("#testKeyBtn").onclick=testKey;$("#authDiagBtn").onclick=runAuthDiagnostics;
+els.providerSelect.onchange=()=>{settings.provider=els.providerSelect.value;const first=modelCatalog.find(entry=>entry.provider===settings.provider);settings.model=first?.id||DEFAULT_MODEL_ID;renderModelControls();syncChips()};
+els.modelSelect.onchange=()=>{settings.model=els.modelSelect.value;syncChips()};
 els.apiKey.addEventListener("input",()=>{setKeyStatus("アクセスパスワード状態: 未確認（入力内容が変更されました）","");if(els.authDiag)els.authDiag.style.display="none"});
 els.send.onclick=sendMessage;els.prompt.addEventListener("input",resizePrompt);els.prompt.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();sendMessage()}});
+els.prompt.addEventListener("paste",e=>{const files=[...e.clipboardData.items].filter(item=>item.type.startsWith("image/")).map(item=>item.getAsFile()).filter(Boolean);if(files.length){e.preventDefault();addImageFiles(files)}});
 $("#workspaceBtn").onclick=()=>togglePlay();$("#openPlayBtn").onclick=()=>togglePlay(true);$("#exportBtn").onclick=exportChat;
 $$(".playTab").forEach(b=>b.onclick=()=>setPlayTab(b.dataset.tab));
 $("#newFileBtn").onclick=()=>$("#newFileDialog").showModal();$("#cancelNewFileBtn").onclick=()=>$("#newFileDialog").close();
 $("#createFileBtn").onclick=async()=>{try{const p=normalizePath($("#newFilePath").value);await putFile(p,$("#newFileContent").value,{createOnly:true});$("#newFileDialog").close();$("#newFilePath").value="";$("#newFileContent").value="";await renderFiles();await openFile(p);toast("作成しました: "+p)}catch(e){toast(e.message)}};
 $("#importFilesBtn").onclick=()=>els.filePicker.click();$("#attachBtn").onclick=()=>els.filePicker.click();els.filePicker.onchange=async()=>{try{await importTextFiles(els.filePicker.files,false)}catch(e){toast(e.message)}finally{els.filePicker.value=""}};
+$("#imageBtn").onclick=()=>els.imagePicker.click();els.imagePicker.onchange=async()=>{try{await addImageFiles(els.imagePicker.files)}finally{els.imagePicker.value=""}};
 $("#importFolderBtn").onclick=()=>$("#folderPicker").click();$("#folderPicker").onchange=async()=>{try{await importTextFiles($("#folderPicker").files,true)}catch(e){toast(e.message)}finally{$("#folderPicker").value=""}};
 $("#exportWorkspaceBtn").onclick=exportWorkspace;$("#saveFileBtn").onclick=saveCurrentFile;$("#undoFileBtn").onclick=undoCurrentFile;
 $("#downloadFileBtn").onclick=()=>{if(currentFilePath)downloadBlob(currentFilePath.split("/").pop(),els.codeEditor.value)};
@@ -1567,7 +1725,7 @@ document.addEventListener("keydown",e=>{
 window.addEventListener("beforeunload",e=>{if(running){e.preventDefault();e.returnValue=""}});
 
 async function init(){
-  applyTheme();syncChips();await openDB();await renderFiles();renderToolLog();
+  applyTheme();syncChips();await loadModelCatalog();await openDB();await renderFiles();renderToolLog();
   if(!chats.length)createChat();else{activeChatId=chats[0].id;renderChatList();renderThread();updateTitle();renderPlan()}
   if(!getApiKey())setTimeout(openSettings,250);
 }

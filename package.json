@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Nemotron Workspace served by a Render-ready OpenRouter proxy",
+  "description": "Nemotron Workspace served by a Render-ready multi-provider proxy",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",

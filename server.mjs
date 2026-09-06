@@ -3,6 +3,14 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_MODEL_KEY,
+  MODEL_CATALOG,
+  PROVIDERS,
+  findModel,
+  providerFor,
+} from "./models.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,8 +18,6 @@ const publicDir = path.join(__dirname, "public");
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
-const model = "nvidia/nemotron-3-ultra-550b-a55b:free";
-const openRouterBase = "https://openrouter.ai/api/v1";
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20mb", strict: true }));
@@ -48,9 +54,8 @@ function secretsMatch(left, right) {
 }
 
 function authorizeRequest(req) {
-  const apiKey = normalizeApiKey(process.env.OPENROUTER_API_KEY);
   const configuredPassword = normalizeSecret(process.env.APP_ACCESS_PASSWORD);
-  if (!apiKey || !configuredPassword) {
+  if (!configuredPassword) {
     return { ok: false, reason: "server_configuration" };
   }
 
@@ -61,7 +66,19 @@ function authorizeRequest(req) {
   if (!secretsMatch(suppliedPassword, configuredPassword)) {
     return { ok: false, reason: "invalid_password" };
   }
-  return { ok: true, apiKey };
+  return { ok: true };
+}
+
+function requestedModel(body = {}) {
+  return findModel(body.provider || DEFAULT_MODEL.provider, body.model || DEFAULT_MODEL.id);
+}
+
+function providerAccess(providerId) {
+  const provider = providerFor(providerId);
+  if (!provider) return { ok: false, reason: "unknown_provider" };
+  const apiKey = normalizeApiKey(process.env[provider.keyEnv]);
+  if (!apiKey) return { ok: false, reason: "provider_configuration", provider };
+  return { ok: true, provider, apiKey };
 }
 
 function redactSecrets(value) {
@@ -70,7 +87,7 @@ function redactSecrets(value) {
     .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]");
 }
 
-function parseErrorBody(text, status) {
+function parseErrorBody(text, status, providerLabel = "OpenRouter") {
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -83,7 +100,7 @@ function parseErrorBody(text, status) {
     nested?.message ||
     parsed?.message ||
     (text && text.trim()) ||
-    `OpenRouter が HTTP ${status} を返しました。`;
+    `${providerLabel} が HTTP ${status} を返しました。`;
 
   return {
     message: redactSecrets(message).slice(0, 1200),
@@ -92,21 +109,27 @@ function parseErrorBody(text, status) {
   };
 }
 
-function authFailureMessage(reason) {
+function authFailureMessage(reason, provider = null) {
   if (reason === "server_configuration") {
-    return "Renderに OPENROUTER_API_KEY と APP_ACCESS_PASSWORD の両方を設定してください。";
+    return "Renderに APP_ACCESS_PASSWORD と、利用するプロバイダのAPIキーを設定してください。";
   }
   if (reason === "missing_password") {
     return "アクセスパスワードが入力されていません。設定画面から入力してください。";
+  }
+  if (reason === "provider_configuration") {
+    return `${provider?.label || "選択したプロバイダ"} のAPIキー（${provider?.keyEnv || "環境変数"}）がRenderに設定されていません。`;
+  }
+  if (reason === "unknown_provider") {
+    return "指定されたプロバイダは許可されていません。";
   }
   return "アクセスパスワードが正しくありません。Render側の設定を確認してください。";
 }
 
 function sendAuthError(res, auth) {
-  const serverConfiguration = auth.reason === "server_configuration";
+  const serverConfiguration = ["server_configuration", "provider_configuration", "unknown_provider"].includes(auth.reason);
   return res.status(serverConfiguration ? 503 : 401).json({
     error: {
-      message: authFailureMessage(auth.reason),
+      message: authFailureMessage(auth.reason, auth.provider),
       code: auth.reason,
     },
     proxy: true,
@@ -118,13 +141,20 @@ function removeAccessPassword(body) {
   return forwarded;
 }
 
-async function openRouterFetch(endpoint, apiKey, init = {}) {
-  return fetch(`${openRouterBase}${endpoint}`, {
+async function providerFetch(providerId, endpoint, apiKey, init = {}) {
+  const provider = providerFor(providerId);
+  if (!provider) throw new Error(`Unknown provider: ${providerId}`);
+  const gatewayHeaders = providerId === "openrouter"
+    ? {
+        "HTTP-Referer": process.env.PUBLIC_APP_URL || "https://onrender.com",
+        "X-Title": "Nemotron Workspace",
+      }
+    : {};
+  return fetch(`${provider.baseUrl}${endpoint}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "HTTP-Referer": process.env.PUBLIC_APP_URL || "https://onrender.com",
-      "X-Title": "Nemotron Workspace",
+      ...gatewayHeaders,
       ...(init.headers || {}),
       Authorization: `Bearer ${apiKey}`,
     },
@@ -137,12 +167,31 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     proxy: true,
     keyMode: "password",
-    configured: Boolean(
-      normalizeApiKey(process.env.OPENROUTER_API_KEY) &&
-      normalizeSecret(process.env.APP_ACCESS_PASSWORD),
-    ),
-    model,
+    configured: Boolean(normalizeSecret(process.env.APP_ACCESS_PASSWORD)),
+    configuredProviders: Object.values(PROVIDERS)
+      .filter((provider) => normalizeApiKey(process.env[provider.keyEnv]))
+      .map((provider) => provider.id),
+    provider: DEFAULT_MODEL.provider,
+    model: DEFAULT_MODEL.id,
     service: "Nemotron Workspace",
+  });
+});
+
+app.get("/api/models", (_req, res) => {
+  res.json({
+    default: { provider: DEFAULT_MODEL.provider, model: DEFAULT_MODEL.id, key: DEFAULT_MODEL_KEY },
+    providers: Object.values(PROVIDERS).map((provider) => ({
+      id: provider.id,
+      label: provider.label,
+      freeLabel: provider.freeLabel,
+      docsUrl: provider.docsUrl,
+      configured: Boolean(normalizeApiKey(process.env[provider.keyEnv])),
+    })),
+    models: MODEL_CATALOG.map((entry) => ({
+      ...entry,
+      providerLabel: PROVIDERS[entry.provider].label,
+      configured: Boolean(normalizeApiKey(process.env[PROVIDERS[entry.provider].keyEnv])),
+    })),
   });
 });
 
@@ -157,21 +206,33 @@ app.post("/api/chat", async (req, res) => {
     });
   }
 
+  const selected = requestedModel(req.body);
+  if (!selected) {
+    return res.status(400).json({
+      error: { message: "許可されていないプロバイダまたはモデルです。", code: "invalid_model" },
+      proxy: true,
+    });
+  }
+  const access = providerAccess(selected.provider);
+  if (!access.ok) return sendAuthError(res, access);
+
   const forwardedBody = {
     ...removeAccessPassword(req.body),
-    model,
+    model: selected.id,
     stream: req.body.stream !== false,
   };
+  delete forwardedBody.provider;
+  if (selected.provider !== "openrouter") delete forwardedBody.plugins;
 
   try {
-    const upstream = await openRouterFetch("/chat/completions", auth.apiKey, {
+    const upstream = await providerFetch(selected.provider, "/chat/completions", access.apiKey, {
       method: "POST",
       body: JSON.stringify(forwardedBody),
     });
 
     if (!upstream.ok) {
       const text = await upstream.text();
-      const details = parseErrorBody(text, upstream.status);
+      const details = parseErrorBody(text, upstream.status, access.provider.label);
       return res.status(upstream.status).json({
         error: details,
         upstream_status: upstream.status,
@@ -197,7 +258,7 @@ app.post("/api/chat", async (req, res) => {
           res.status(502);
         }
         res.end();
-        console.error("OpenRouter stream error:", error.message);
+        console.error(`${access.provider.label} stream error:`, error.message);
       }).pipe(res);
     } else {
       res.end();
@@ -207,8 +268,8 @@ app.post("/api/chat", async (req, res) => {
     res.status(502).json({
       error: {
         message: isAbort
-          ? "OpenRouter への接続がタイムアウトしました。もう一度試してください。"
-          : `OpenRouter への接続に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
+          ? `${access.provider.label} への接続がタイムアウトしました。もう一度試してください。`
+          : `${access.provider.label} への接続に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
         code: isAbort ? "upstream_timeout" : "upstream_network_error",
       },
       upstream_status: 502,
@@ -217,9 +278,14 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-async function diagnosticRequest(endpoint, apiKey, init) {
+function providerCheckEndpoint(providerId) {
+  return providerId === "openrouter" ? "/key" : "/models";
+}
+
+async function diagnosticRequest(providerId, endpoint, apiKey, init) {
+  const provider = providerFor(providerId);
   try {
-    const response = await openRouterFetch(endpoint, apiKey, {
+    const response = await providerFetch(providerId, endpoint, apiKey, {
       ...init,
       signal: AbortSignal.timeout(30000),
     });
@@ -235,15 +301,15 @@ async function diagnosticRequest(endpoint, apiKey, init) {
       httpStatus: response.status,
       data,
       detail: response.ok
-        ? "OpenRouter から正常な応答を受信しました。"
-        : parseErrorBody(text, response.status).message,
+        ? `${provider.label} から正常な応答を受信しました。`
+        : parseErrorBody(text, response.status, provider.label).message,
     };
   } catch (error) {
     return {
       ok: false,
       httpStatus: null,
       detail: error?.name === "TimeoutError"
-        ? "OpenRouter への接続がタイムアウトしました。"
+        ? `${provider.label} への接続がタイムアウトしました。`
         : `接続エラー: ${redactSecrets(error?.message || "unknown error")}`,
     };
   }
@@ -253,7 +319,10 @@ app.post("/api/key-check", async (req, res) => {
   const auth = authorizeRequest(req);
   if (!auth.ok) return sendAuthError(res, auth);
 
-  const check = await diagnosticRequest("/key", auth.apiKey, { method: "GET" });
+  const selected = requestedModel(req.body) || DEFAULT_MODEL;
+  const access = providerAccess(selected.provider);
+  if (!access.ok) return sendAuthError(res, access);
+  const check = await diagnosticRequest(selected.provider, providerCheckEndpoint(selected.provider), access.apiKey, { method: "GET" });
   const payload = { ok: check.ok, data: check.data };
   if (!check.ok) {
     payload.error = { message: check.detail, code: "upstream_error" };
@@ -263,10 +332,12 @@ app.post("/api/key-check", async (req, res) => {
 
 app.post("/api/diagnostics", async (req, res) => {
   const auth = authorizeRequest(req);
+  const selected = requestedModel(req.body) || DEFAULT_MODEL;
   if (!auth.ok) {
     return res.json({
       ok: false,
-      model,
+      provider: selected.provider,
+      model: selected.id,
       steps: [
         {
           id: "access-password",
@@ -279,15 +350,31 @@ app.post("/api/diagnostics", async (req, res) => {
     });
   }
 
+  const access = providerAccess(selected.provider);
+  if (!access.ok) {
+    return res.json({
+      ok: false,
+      provider: selected.provider,
+      model: selected.id,
+      steps: [{
+        id: "provider-key",
+        label: "プロバイダAPIキー",
+        ok: false,
+        httpStatus: 503,
+        detail: authFailureMessage(access.reason, access.provider),
+      }],
+    });
+  }
+
   const steps = [];
-  const keyCheck = await diagnosticRequest("/key", auth.apiKey, { method: "GET" });
-  steps.push({ id: "key", label: "OpenRouter認証", ...keyCheck });
+  const keyCheck = await diagnosticRequest(selected.provider, providerCheckEndpoint(selected.provider), access.apiKey, { method: "GET" });
+  steps.push({ id: "key", label: `${access.provider.label}認証`, ...keyCheck });
 
   if (keyCheck.ok) {
-    const generation = await diagnosticRequest("/chat/completions", auth.apiKey, {
+    const generation = await diagnosticRequest(selected.provider, "/chat/completions", access.apiKey, {
       method: "POST",
       body: JSON.stringify({
-        model,
+        model: selected.id,
         messages: [{ role: "user", content: "Reply with only: OK" }],
         max_tokens: 16,
         temperature: 0,
@@ -296,10 +383,10 @@ app.post("/api/diagnostics", async (req, res) => {
     });
     steps.push({ id: "generation", label: "最小生成", ...generation });
 
-    const toolCalling = await diagnosticRequest("/chat/completions", auth.apiKey, {
+    const toolCalling = await diagnosticRequest(selected.provider, "/chat/completions", access.apiKey, {
       method: "POST",
       body: JSON.stringify({
-        model,
+        model: selected.id,
         messages: [{ role: "user", content: "現在日時ツールを呼び出してください。" }],
         tools: [
           {
@@ -323,18 +410,18 @@ app.post("/api/diagnostics", async (req, res) => {
       label: "最小生成",
       ok: false,
       httpStatus: null,
-      detail: "OpenRouter認証が失敗したためスキップしました。",
+      detail: `${access.provider.label}認証が失敗したためスキップしました。`,
     });
     steps.push({
       id: "tools",
       label: "Tool Calling",
       ok: false,
       httpStatus: null,
-      detail: "OpenRouter認証が失敗したためスキップしました。",
+      detail: `${access.provider.label}認証が失敗したためスキップしました。`,
     });
   }
 
-  res.json({ ok: steps.every((step) => step.ok), model, steps });
+  res.json({ ok: steps.every((step) => step.ok), provider: selected.provider, model: selected.id, steps });
 });
 
 app.use(express.static(publicDir, { extensions: ["html"] }));
