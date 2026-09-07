@@ -141,6 +141,13 @@ function removeAccessPassword(body) {
   return forwarded;
 }
 
+function adaptProviderBody(provider, body) {
+  const adapted = { ...body };
+  if (provider.supportsReasoning === false) delete adapted.reasoning;
+  if (provider.supportsTemperature === false) delete adapted.temperature;
+  return adapted;
+}
+
 async function providerFetch(providerId, endpoint, apiKey, init = {}) {
   const provider = providerFor(providerId);
   if (!provider) throw new Error(`Unknown provider: ${providerId}`);
@@ -216,16 +223,13 @@ app.post("/api/chat", async (req, res) => {
   const access = providerAccess(selected.provider);
   if (!access.ok) return sendAuthError(res, access);
 
-  const forwardedBody = {
+  const forwardedBody = adaptProviderBody(access.provider, {
     ...removeAccessPassword(req.body),
     model: selected.id,
     stream: req.body.stream !== false,
-  };
+  });
   delete forwardedBody.provider;
   if (selected.provider !== "openrouter") delete forwardedBody.plugins;
-  // Experiential Labs exposes an OpenAI-compatible endpoint but rejects the
-  // OpenRouter-style { reasoning: { enabled: true } } request field.
-  if (access.provider.supportsReasoning === false) delete forwardedBody.reasoning;
 
   try {
     const upstream = await providerFetch(selected.provider, "/chat/completions", access.apiKey, {
@@ -376,19 +380,19 @@ app.post("/api/diagnostics", async (req, res) => {
   if (keyCheck.ok) {
     const generation = await diagnosticRequest(selected.provider, "/chat/completions", access.apiKey, {
       method: "POST",
-      body: JSON.stringify({
+      body: JSON.stringify(adaptProviderBody(access.provider, {
         model: selected.id,
         messages: [{ role: "user", content: "Reply with only: OK" }],
         max_tokens: 16,
         temperature: 0,
         stream: false,
-      }),
+      })),
     });
     steps.push({ id: "generation", label: "最小生成", ...generation });
 
     const toolCalling = await diagnosticRequest(selected.provider, "/chat/completions", access.apiKey, {
       method: "POST",
-      body: JSON.stringify({
+      body: JSON.stringify(adaptProviderBody(access.provider, {
         model: selected.id,
         messages: [{ role: "user", content: "現在日時ツールを呼び出してください。" }],
         tools: [
@@ -404,7 +408,7 @@ app.post("/api/diagnostics", async (req, res) => {
         max_tokens: 64,
         temperature: 0,
         stream: false,
-      }),
+      })),
     });
     steps.push({ id: "tools", label: "Tool Calling", ...toolCalling });
   } else {
