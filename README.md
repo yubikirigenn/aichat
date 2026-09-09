@@ -34,6 +34,8 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
 - チャット履歴、ダークモード、JSON エクスポート
 
+Experiential Labsの無料日次ティアは、公式仕様上 `claude-fable-5.1` と `gpt-6-astra`（カード登録と$1以上の決済確認、日次・時間別上限あり）です。
+
 ## Render への設定
 
 1. GitHub でこのリポジトリを Render に接続します。

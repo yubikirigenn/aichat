@@ -143,7 +143,13 @@ function removeAccessPassword(body) {
 
 function adaptProviderBody(provider, body) {
   const adapted = { ...body };
-  if (provider.supportsReasoning === false) delete adapted.reasoning;
+  if (provider.supportsReasoning === false) {
+    delete adapted.reasoning;
+  } else if (provider.reasoningParameter === "reasoning_effort" && adapted.reasoning) {
+    const enabled = adapted.reasoning.enabled !== false;
+    delete adapted.reasoning;
+    if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
+  }
   if (provider.supportsTemperature === false) delete adapted.temperature;
   return adapted;
 }

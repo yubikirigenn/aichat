@@ -26,9 +26,11 @@ export const PROVIDERS = Object.freeze({
     label: "Experiential Labs",
     baseUrl: "https://api.experientiallabs.ai/v1",
     keyEnv: "EXPERIENTIAL_LABS_API_KEY",
-    supportsReasoning: false,
+    supportsReasoning: true,
+    reasoningParameter: "reasoning_effort",
+    defaultReasoningEffort: "high",
     supportsTemperature: false,
-    freeLabel: "Free catalog",
+    freeLabel: "Free daily tier (条件あり)",
     docsUrl: "https://platform.experientiallabs.ai/models",
   }),
   openrouter: Object.freeze({
@@ -71,12 +73,17 @@ export const MODEL_CATALOG = Object.freeze([
   model("bai", "qwen3.8-flash", "Qwen3.8 Flash", { vision: true }),
   model("bai", "mimo-v2.5", "MiMo-V2.5", { vision: true }),
 
-  // Experiential Labs catalog entries marked free on 2026-09-06.
-  model("experientiallabs", "claude-fable-5.1", "Claude Fable 5.1", { vision: true }),
-  model("experientiallabs", "deepseek-v4-flash", "DeepSeek V4 Flash", { supportsTools: true }),
-  model("experientiallabs", "gpt-5.6-luna", "GPT-5.6 Luna", { vision: true }),
-  model("experientiallabs", "gpt-6-astra", "GPT-6 Astra", { vision: true }),
-  model("experientiallabs", "qwen3.8-27b", "Qwen3.8 27B", { vision: true }),
+  // Experiential Labs free daily tiers confirmed on 2026-09-09.
+  model("experientiallabs", "claude-fable-5.1", "Claude Fable 5.1", {
+    vision: true,
+    freeLabel: "Free daily tier (カード+決済条件)",
+    note: "無料枠はカード登録と$1以上の決済確認が必要。日次・時間別上限あり。",
+  }),
+  model("experientiallabs", "gpt-6-astra", "GPT-6 Astra", {
+    vision: true,
+    freeLabel: "Free daily tier (カード+決済条件)",
+    note: "無料枠はカード登録と$1以上の決済確認が必要。日次・時間別上限あり。",
+  }),
 
   // OpenRouter Models API snapshot (2026-09-09): zero-priced text-chat endpoints.
   model("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free", "NVIDIA Nemotron 3 Ultra", { supportsTools: true }),
