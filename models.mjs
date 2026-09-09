@@ -1,4 +1,4 @@
-// Curated snapshot checked on 2026-09-06 (JST).
+// Curated snapshot checked on 2026-09-09 (JST).
 // "Free" means a provider free plan/offer or an OpenRouter :free endpoint.
 // Availability and rate limits can change; the server still validates every
 // provider/model pair against this allowlist before forwarding a request.
@@ -9,6 +9,7 @@ export const PROVIDERS = Object.freeze({
     label: "Groq",
     baseUrl: "https://api.groq.com/openai/v1",
     keyEnv: "GROQ_API_KEY",
+    supportsReasoning: false,
     freeLabel: "Free plan枠",
     docsUrl: "https://console.groq.com/docs/rate-limits",
   }),
@@ -77,7 +78,7 @@ export const MODEL_CATALOG = Object.freeze([
   model("experientiallabs", "gpt-6-astra", "GPT-6 Astra", { vision: true }),
   model("experientiallabs", "qwen3.8-27b", "Qwen3.8 27B", { vision: true }),
 
-  // OpenRouter Models API snapshot: zero-priced chat endpoints.
+  // OpenRouter Models API snapshot (2026-09-09): zero-priced text-chat endpoints.
   model("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free", "NVIDIA Nemotron 3 Ultra", { supportsTools: true }),
   model("openrouter", "openrouter/free", "Free Models Router", { vision: true }),
   model("openrouter", "inclusionai/ling-3.0-flash-sante:free", "Ling 3.0 Flash Sante", { supportsTools: true }),
@@ -90,13 +91,12 @@ export const MODEL_CATALOG = Object.freeze([
   model("openrouter", "thinkingmachines/inkling:free", "Inkling", { vision: true }),
   model("openrouter", "poolside/laguna-xs-2.1:free", "Laguna XS 2.1"),
   model("openrouter", "cohere/north-mini-code:free", "Cohere North Mini Code"),
-  model("openrouter", "z-ai/glm-5.2:free", "GLM 5.2"),
   model("openrouter", "nvidia/nemotron-3.5-content-safety:free", "NVIDIA Nemotron 3.5 Content Safety", { vision: true, supportsTools: false }),
-  model("openrouter", "minimax/minimax-m3:free", "MiniMax M3", { vision: true }),
+  model("openrouter", "nex-agi/nex-n2.5-mini:free", "Nex AGI Nex-N2.5 Mini"),
+  model("openrouter", "nex-agi/nex-n2.5-pro:free", "Nex AGI Nex-N2.5 Pro", { vision: true }),
   model("openrouter", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "NVIDIA Nemotron 3 Nano Omni", { vision: true }),
   model("openrouter", "google/gemma-4-26b-a4b-it:free", "Gemma 4 26B", { vision: true }),
   model("openrouter", "google/gemma-4-31b-it:free", "Gemma 4 31B", { vision: true }),
-  model("openrouter", "minimax/minimax-m2.7:free", "MiniMax M2.7"),
   model("openrouter", "nvidia/nemotron-3-super-120b-a12b:free", "NVIDIA Nemotron 3 Super"),
 ]);
 
