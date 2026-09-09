@@ -141,16 +141,20 @@ function removeAccessPassword(body) {
   return forwarded;
 }
 
-function adaptProviderBody(provider, body) {
+function adaptProviderBody(provider, body, model = null) {
   const adapted = { ...body };
-  if (provider.supportsReasoning === false) {
+  const supportsReasoning = model?.supportsReasoning !== false && provider.supportsReasoning !== false;
+  const supportsTemperature = model?.supportsTemperature !== false && provider.supportsTemperature !== false;
+
+  if (!supportsReasoning) {
     delete adapted.reasoning;
+    delete adapted.reasoning_effort;
   } else if (provider.reasoningParameter === "reasoning_effort" && adapted.reasoning) {
     const enabled = adapted.reasoning.enabled !== false;
     delete adapted.reasoning;
     if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
   }
-  if (provider.supportsTemperature === false) delete adapted.temperature;
+  if (!supportsTemperature) delete adapted.temperature;
   return adapted;
 }
 
@@ -233,7 +237,7 @@ app.post("/api/chat", async (req, res) => {
     ...removeAccessPassword(req.body),
     model: selected.id,
     stream: req.body.stream !== false,
-  });
+  }, selected);
   delete forwardedBody.provider;
   if (selected.provider !== "openrouter") delete forwardedBody.plugins;
 
@@ -392,7 +396,7 @@ app.post("/api/diagnostics", async (req, res) => {
         max_tokens: 16,
         temperature: 0,
         stream: false,
-      })),
+      }, selected)),
     });
     steps.push({ id: "generation", label: "最小生成", ...generation });
 
@@ -414,7 +418,7 @@ app.post("/api/diagnostics", async (req, res) => {
         max_tokens: 64,
         temperature: 0,
         stream: false,
-      })),
+      }, selected)),
     });
     steps.push({ id: "tools", label: "Tool Calling", ...toolCalling });
   } else {

@@ -34,7 +34,8 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
 - チャット履歴、ダークモード、JSON エクスポート
 
-Experiential Labsの無料日次ティアは、公式仕様上 `claude-fable-5.1` と `gpt-6-astra`（カード登録と$1以上の決済確認、日次・時間別上限あり）です。
+Experiential Labsは、2026-09-09に公開カタログで確認できた、アクティブかつホスト提供・支払い不要のテキスト出力モデルを登録しています（画像入力対応もモデルごとに反映）。無料アクセス枠の利用上限・提供条件はモデルやアカウントによって変動します。
+参照元: [Experiential Labs公開モデルカタログ](https://api.experientiallabs.ai/api/models) / [API仕様](https://platform.experientiallabs.ai/llms.txt)
 
 ## Render への設定
 
