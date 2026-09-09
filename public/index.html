@@ -455,6 +455,10 @@ let previewTimer = null;
 let modelCatalog = [...FALLBACK_MODELS];
 let providerCatalog = [];
 let pendingImages = [];
+let chatAutoFollow = true;
+let scrollBottomFrame = 0;
+const CHAT_BOTTOM_THRESHOLD = 112;
+const THINKING_BOTTOM_THRESHOLD = 24;
 
 function safeJSON(s, fallback){ try{return s?JSON.parse(s):fallback}catch{return fallback} }
 function nowISO(){ return new Date().toISOString() }
@@ -514,7 +518,47 @@ function appendChatImages(parent,images){
   parent.appendChild(wrap);
 }
 function setStatus(text,state="ok"){ els.statusText.textContent=text;els.statusDot.className="statusDot"+(state==="busy"?" busy":state==="err"?" err":"") }
-function scrollBottom(){ requestAnimationFrame(()=>{els.chatScroll.scrollTop=els.chatScroll.scrollHeight}) }
+function chatDistanceFromBottom(){
+  return Math.max(0,els.chatScroll.scrollHeight-els.chatScroll.scrollTop-els.chatScroll.clientHeight);
+}
+function syncChatAutoFollow(){
+  chatAutoFollow=chatDistanceFromBottom()<=CHAT_BOTTOM_THRESHOLD;
+  if(!chatAutoFollow&&scrollBottomFrame){
+    cancelAnimationFrame(scrollBottomFrame);
+    scrollBottomFrame=0;
+  }
+}
+function scrollBottom({force=false}={}){
+  if(force)chatAutoFollow=true;
+  if(!force&&!chatAutoFollow)return;
+  if(scrollBottomFrame)cancelAnimationFrame(scrollBottomFrame);
+  scrollBottomFrame=requestAnimationFrame(()=>{
+    scrollBottomFrame=0;
+    if(!force&&!chatAutoFollow)return;
+    els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+  });
+}
+function restoreChatScroll(scrollTop){
+  if(chatAutoFollow)return;
+  const maxTop=Math.max(0,els.chatScroll.scrollHeight-els.chatScroll.clientHeight);
+  els.chatScroll.scrollTop=Math.min(scrollTop,maxTop);
+}
+function thinkingViewportState(target){
+  const body=target?.querySelector(".thinkingBody");
+  if(!body)return null;
+  return {
+    scrollTop:body.scrollTop,
+    atBottom:body.scrollHeight-body.scrollTop-body.clientHeight<=THINKING_BOTTOM_THRESHOLD,
+  };
+}
+function restoreThinkingViewport(target,state){
+  if(!state)return;
+  const body=target?.querySelector(".thinkingBody");
+  if(!body)return;
+  if(state.atBottom)body.scrollTop=body.scrollHeight;
+  else body.scrollTop=Math.min(state.scrollTop,Math.max(0,body.scrollHeight-body.clientHeight));
+}
+els.chatScroll.addEventListener("scroll",syncChatAutoFollow,{passive:true});
 function activeChat(){ return chats.find(c=>c.id===activeChatId) }
 function persistChats(){
   // Tool用の巨大な内部コンテキスト（読んだファイル全文など）は永続化しない。
@@ -648,16 +692,16 @@ async function loadModelCatalog(){
 
 function createChat(){
   const c={id:uid(),title:"新しいチャット",createdAt:nowISO(),updatedAt:nowISO(),messages:[],plan:null};
-  chats.unshift(c);activeChatId=c.id;persistChats();renderChatList();renderThread();updateTitle();return c;
+  chats.unshift(c);activeChatId=c.id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();return c;
 }
 function deleteChat(id){
   chats=chats.filter(c=>c.id!==id);
   if(activeChatId===id) activeChatId=chats[0]?.id||null;
-  if(!activeChatId) createChat(); else {persistChats();renderChatList();renderThread();updateTitle()}
+  if(!activeChatId) createChat(); else {persistChats();renderChatList();renderThread({forceBottom:true});updateTitle()}
 }
 function selectChat(id){
   if(running){toast("生成中はチャットを切り替えられません");return}
-  activeChatId=id;renderChatList();renderThread();updateTitle();renderPlan();$("#sidebar")?.classList.remove("mobileOpen");
+  activeChatId=id;renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan();$("#sidebar")?.classList.remove("mobileOpen");
 }
 function updateTitle(){
   const c=activeChat();els.chatTitle.textContent=c?.title||"新しいチャット";
@@ -987,15 +1031,20 @@ function renderMessage(m){
   }
   wrap.append(av,b);return wrap;
 }
-function renderThread(){
+function renderThread({forceBottom=false}={}){
+  const previousScrollTop=els.chatScroll.scrollTop;
+  const preserveScroll=!forceBottom&&!chatAutoFollow;
+  if(forceBottom)chatAutoFollow=true;
   const c=activeChat();els.thread.innerHTML="";
   if(!c||!c.messages.length){
     const e=document.createElement("div");e.className="empty";e.innerHTML=`<div class="emptyInner"><div class="hero">N</div><h1>新しいチャット</h1></div>`;
     els.thread.appendChild(e);
+    if(forceBottom||chatAutoFollow)scrollBottom({force:forceBottom});
     return;
   }
   for(const m of c.messages) if(!m.internal) els.thread.appendChild(renderMessage(m));
-  scrollBottom();
+  if(forceBottom||chatAutoFollow)scrollBottom({force:forceBottom});
+  else if(preserveScroll)restoreChatScroll(previousScrollTop);
 }
 function scheduleStreamingAssistantRender(target,msg){
   if(msg.streamRenderFrame)return;
@@ -1009,8 +1058,11 @@ function flushStreamingAssistantRender(target,msg){
   renderStreamingAssistant(target,msg);
 }
 function renderStreamingAssistant(target,msg){
+  const previousScrollTop=els.chatScroll.scrollTop;
+  const preserveScroll=!chatAutoFollow;
   const existingThinking=target.querySelector(".thinking");
   if(existingThinking)msg.thinkingOpen=existingThinking.open;
+  const thinkingState=thinkingViewportState(target);
   const b=target.querySelector(".bubble");b.innerHTML="";
   if(msg.activity?.length){const a=document.createElement("div");a.innerHTML=renderActivityHTML(msg.activity);b.append(...a.children)}
   const r=getReasoningText(msg);
@@ -1019,11 +1071,13 @@ function renderStreamingAssistant(target,msg){
     const d=makeThinkingDetails(msg,{streaming:true});
     if(d)b.appendChild(d);
   }
+  restoreThinkingViewport(target,thinkingState);
   if(msg.planSnapshot){const x=document.createElement("div");x.innerHTML=renderPlanCard(msg.planSnapshot);b.append(...x.children)}
   if(msg.toolEvents?.length){const te=document.createElement("div");te.innerHTML=renderToolEventsHTML(msg.toolEvents);b.append(...te.children)}
   if(msg.content){const body=document.createElement("div");body.innerHTML=markdown(msg.content);b.appendChild(body)}
   else if(!r&&!msg.activity?.length){const t=document.createElement("div");t.style.color="var(--muted)";t.textContent="…";b.appendChild(t)}
-  scrollBottom();
+  if(preserveScroll)restoreChatScroll(previousScrollTop);
+  else scrollBottom();
 }
 async function openDB(){
   db=await new Promise((resolve,reject)=>{
@@ -1527,9 +1581,9 @@ async function sendMessage(){
   if(!getApiKey()){openSettings();setKeyStatus("アクセスパスワード状態: 未入力","bad");toast("設定画面からアクセスパスワードを入力してください");return}
   const images=pendingImages.map(image=>({...image}));
   const c=activeChat()||createChat();autoTitle(text||"画像チャット");
-  c.messages.push({role:"user",content:text,images,at:nowISO()});c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread();renderChatList();
+  c.messages.push({role:"user",content:text,images,at:nowISO()});c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();
   const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
-  const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom();
+  const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
   let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
   try{
     while(rounds<Number(settings.maxRounds)){
@@ -1738,7 +1792,7 @@ window.addEventListener("beforeunload",e=>{if(running){e.preventDefault();e.retu
 
 async function init(){
   applyTheme();syncChips();await loadModelCatalog();await openDB();await renderFiles();renderToolLog();
-  if(!chats.length)createChat();else{activeChatId=chats[0].id;renderChatList();renderThread();updateTitle();renderPlan()}
+  if(!chats.length)createChat();else{activeChatId=chats[0].id;renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan()}
   if(!getApiKey())setTimeout(openSettings,250);
 }
 init().catch(e=>{console.error(e);toast("初期化エラー: "+e.message);setStatus("初期化エラー","err")});
