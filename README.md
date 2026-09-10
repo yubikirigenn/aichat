@@ -30,7 +30,10 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - IndexedDB の Playground（作成、読込、差分編集、追記、検索、名前変更、削除、履歴、プレビュー）
 - `chart_render` による SVG の折れ線・棒グラフ
 - OpenRouter Web Search / Web Fetch Server Tool
-- Web Search Server Tool が 502 の場合の旧 `web` プラグインへの互換フォールバック
+- OpenRouter 以外（Groq / B.AI / Experiential Labs）でも使える汎用 Web検索
+  - `/api/web-search`（DuckDuckGo経由）と `/api/web-fetch` をサーバで実行
+  - モデルからは `web_search` / `web_fetch` Function Tool として公開
+- Web Search Server Tool が失敗した場合の Function Tool フォールバック
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
 - チャット履歴、ダークモード、JSON エクスポート
 

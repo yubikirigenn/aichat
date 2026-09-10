@@ -350,7 +350,7 @@ html,body{background:var(--bg);color:var(--text)}
       <label class="toggle"><input id="reasoningToggle" type="checkbox"><span class="track"></span></label>
     </div>
     <div class="switchRow">
-      <div class="switchLabel"><strong>Web検索・URL読取</strong><span>必要なときNemotron自身がSearch / Fetchを呼び出す</span></div>
+      <div class="switchLabel"><strong>Web検索・URL読取</strong><span>全プロバイダ対応 · 必要なときモデルがSearch / Fetchを呼び出す</span></div>
       <label class="toggle"><input id="webToggle" type="checkbox"><span class="track"></span></label>
     </div>
     <div class="row2">
@@ -361,7 +361,7 @@ html,body{background:var(--bg);color:var(--text)}
       <div class="field"><label>Web検索最大Call / 応答</label><input id="webMaxCallsInput" type="number" min="1" max="20" step="1"></div>
       <div class="field"><label>Workspace保持履歴 / ファイル</label><input id="fileHistoryInput" type="number" min="1" max="50" step="1"></div>
     </div>
-    <div class="note warn">Web検索には検索エンジン側の料金が発生する場合があります。機密情報・個人情報は送信しないでください。</div>
+    <div class="note warn">Web検索には検索エンジン側の料金が発生する場合があります。機密情報・個人情報は送信しないでください。OpenRouter以外のプロバイダでは、このアプリのサーバ経由（DuckDuckGo）で検索します。</div>
     <div class="field">
       <label>追加System Prompt</label>
       <textarea id="systemPromptInput" placeholder="任意の追加指示"></textarea>
@@ -393,6 +393,8 @@ const DEFAULT_MODEL_ID = "nvidia/nemotron-3-ultra-550b-a55b:free";
 const API_URL = "/api/chat";
 const KEY_INFO_URL = "/api/key-check";
 const DIAGNOSTICS_URL = "/api/diagnostics";
+const WEB_SEARCH_URL = "/api/web-search";
+const WEB_FETCH_URL = "/api/web-fetch";
 const LS_SETTINGS = "nemotron_workspace_settings_v1";
 const LS_CHATS = "nemotron_workspace_chats_v1";
 const SS_KEY = "nemotron_workspace_access_password";
@@ -672,7 +674,7 @@ function syncChips(){
   els.sideModelName.textContent=selected.name;
   els.sideModelBadge.textContent=selected.freeLabel||"FREE";
   els.reasonChip.style.display = settings.reasoning ? "" : "none";
-  els.webChip.style.display = settings.web && selected.provider==="openrouter" ? "" : "none";
+  els.webChip.style.display = settings.web ? "" : "none";
   els.planChip.textContent = "Planner: " + (settings.planner==="auto"?"Auto":settings.planner==="always"?"Always":"Off");
   renderModelControls();
 }
@@ -827,6 +829,10 @@ function makeThinkingDetails(msg,{streaming=false}={}){
 function friendlyToolName(name){
   const map={
     current_datetime:"現在日時",
+    web_search:"Web検索",
+    web_fetch:"Web読取",
+    "openrouter:web_search":"Web Search",
+    "openrouter:web_fetch":"Web Fetch",
     workspace_list_files:"Playground · ファイル一覧",
     workspace_read_file:"Playground · ファイル読取",
     workspace_write_file:"Playground · ファイル作成",
@@ -850,7 +856,7 @@ function activityGlyph(name,status){
   if(status==="running")return "";
   const n=String(name||"");
   if(n==="Nemotron")return "✦";
-  if(n.includes("Web Search"))return "⌕";
+  if(n.includes("Web Search")||n.includes("Web検索")||n.includes("Web Fetch")||n.includes("Web読取"))return "⌕";
   if(n.includes("グラフ"))return "▥";
   if(n.includes("計画"))return "☷";
   if(n.includes("現在日時"))return "◷";
@@ -862,7 +868,8 @@ function activityCopy(name,status){
   const n=String(name||"");
   const done=status==="done",failed=status==="failed";
   if(n==="Nemotron")return done?"回答を生成しました":failed?"回答の生成に失敗しました":status==="requested"?"応答を準備しています":"考えています…";
-  if(n.includes("Web Search"))return done?"Webを検索しました":failed?"Web検索に失敗しました":"Webを検索しています";
+  if(n.includes("Web Search")||n.includes("Web検索"))return done?"Webを検索しました":failed?"Web検索に失敗しました":"Webを検索しています";
+  if(n.includes("Web Fetch")||n.includes("Web読取"))return done?"Webページを読み込みました":failed?"Webページの読取に失敗しました":"Webページを読み込んでいます";
   if(n.includes("グラフ"))return done?"グラフを作成しました":failed?"グラフの作成に失敗しました":"グラフを作成しています";
   if(n.includes("計画作成"))return done?"計画を作成しました":failed?"計画の作成に失敗しました":"計画を作成しています";
   if(n.includes("計画更新"))return done?"計画を更新しました":failed?"計画の更新に失敗しました":"計画を更新しています";
@@ -905,8 +912,13 @@ function upsertActivity(msg,id,name,status,detail=""){
 }
 function syncPartialToolActivity(msg,partial){
   const known=new Set(functionTools.map(t=>t.function?.name).filter(Boolean));
+  for(const name of webFunctionTools.map(t=>t.function?.name))known.add(name);
   for(const tc of partial.tool_calls||[]){
     const name=tc?.function?.name||"";
+    if(isServerToolName(name)){
+      upsertActivity(msg,`server-${tc.id||name}`,friendlyToolName(name),"running","OpenRouter Server Toolを実行中");
+      continue;
+    }
     if(known.has(name)){
       upsertActivity(msg,"call-"+(tc.id||name),friendlyToolName(name),"requested","NemotronがToolを要求");
     }
@@ -1196,6 +1208,30 @@ const functionTools = [
  {type:"function",function:{name:"plan_finish",description:"Mark the active plan complete after the requested task has actually been executed and checked.",parameters:{type:"object",properties:{summary:{type:"string"}},required:["summary"],additionalProperties:false}}}
 ];
 
+// Provider-agnostic web tools. Used for non-OpenRouter providers and as an
+// OpenRouter Server Tool fallback. Executed via this app's /api/web-* proxy.
+const webFunctionTools = [
+  {type:"function",function:{name:"web_search",description:"Search the public web for current information, news, facts, prices, weather, documentation, etc. Use this whenever the answer needs up-to-date or external information. Returns titles, URLs, and snippets.",parameters:{type:"object",properties:{query:{type:"string",description:"Search query in the language best suited to the sources (English often works best for international news)"},max_results:{type:"integer",minimum:1,maximum:10,description:"How many results to return (default 5)"}},required:["query"],additionalProperties:false}}},
+  {type:"function",function:{name:"web_fetch",description:"Fetch and extract the readable text content of a public http(s) URL. Use after web_search when you need details from a specific result page, or when the user provides a URL.",parameters:{type:"object",properties:{url:{type:"string",description:"Absolute http(s) URL to fetch"},max_chars:{type:"integer",minimum:500,maximum:50000,description:"Approximate max characters of extracted text (default 12000)"}},required:["url"],additionalProperties:false}}}
+];
+
+async function callWebProxy(url,payload){
+  const key=getApiKey();
+  const res=await fetch(url,{
+    method:"POST",
+    headers:proxyHeaders(),
+    body:JSON.stringify({access_password:key,...payload}),
+    signal:AbortSignal.timeout?AbortSignal.timeout(40000):undefined
+  });
+  const text=await res.text();
+  let data=null;try{data=text?JSON.parse(text):null}catch{}
+  if(!res.ok){
+    const message=data?.error?.message||text.slice(0,500)||`HTTP ${res.status}`;
+    throw new Error(message);
+  }
+  return data;
+}
+
 async function executeTool(call){
   const name=call.function?.name||"";let args={};
   try{args=JSON.parse(call.function?.arguments||"{}")}catch(e){return {ok:false,error:"Tool arguments JSON parse error: "+e.message}}
@@ -1268,6 +1304,20 @@ async function executeTool(call){
       const c=activeChat();if(!c.plan)throw new Error("No active plan");
       c.plan.status="done";c.plan.summary=String(args.summary||"");for(const s of c.plan.steps)if(s.status==="running")s.status="done";
       result={message:"Plan finished",summary:c.plan.summary};renderPlan();persistChats();
+    }else if(name==="web_search"){
+      const query=String(args.query||"").trim();
+      if(!query)throw new Error("query is required");
+      const maxResults=clamp(Number(args.max_results||settings.webResults||5),1,10);
+      result=await callWebProxy(WEB_SEARCH_URL,{query,max_results:maxResults});
+    }else if(name==="web_fetch"){
+      const url=String(args.url||"").trim();
+      if(!url)throw new Error("url is required");
+      const maxChars=clamp(Number(args.max_chars||12000),500,50000);
+      result=await callWebProxy(WEB_FETCH_URL,{url,max_chars:maxChars});
+    }else if(isServerToolName(name)){
+      // Server tools are executed by OpenRouter upstream; a client call means the
+      // stream surfaced a tool_call we should not re-run.
+      result={ok:true,hint:`${name} is handled by OpenRouter Server Tools. No client action required.`};
     }else throw new Error("Unknown tool: "+name);
     const ev={name,ok:true,summary:toolSummary(name,args,result),detail:{arguments:args,result},at:nowISO(),ms:Date.now()-started};pushToolLog(ev);return {ok:true,...result};
   }catch(e){
@@ -1277,6 +1327,8 @@ async function executeTool(call){
 function toolSummary(name,args,result){
   if(name==="current_datetime")return result.datetime||"現在日時";
   if(name==="chart_render")return `${result.series_count||0}系列 × ${result.points||0}点`;
+  if(name==="web_search")return `検索 ${result.count||result.results?.length||0}件`;
+  if(name==="web_fetch")return "読取 "+(args.url||result.url||"");
   if(name==="workspace_read_file")return "読取 "+(args.path||"");
   if(name==="workspace_edit_file")return "差分編集 "+(args.path||"");
   if(name==="workspace_write_file")return "作成 "+(args.path||"");
@@ -1341,10 +1393,12 @@ Playgroundルール:
 - 軽い質問や単純な会話では計画は不要です。
 
 Web:
-- 現在情報、最新情報、外部事実の確認が必要なときは openrouter:web_search を使ってください。
-- ユーザーがURLを示した場合や検索結果のページ本文を詳しく読む必要がある場合は openrouter:web_fetch を使ってください。
-- 日付・時刻・「今日」「現在」などの正確な時間基準が必要なら current_datetime を使ってください。これはブラウザ側で実行され、OpenRouter Server Toolには依存しません。
-- Web Server Toolが一時障害の場合、アプリが自動的に互換Web Searchへ切り替えることがあります。その場合も与えられた検索結果を使って回答してください。
+- 現在情報・最新情報・外部事実の確認が必要なときは、必ず Web検索ツールを使ってください。
+- OpenRouter利用時は openrouter:web_search / openrouter:web_fetch（Server Tool）を使います。
+- その他のプロバイダ、またはServer Toolが使えない場合は web_search / web_fetch を使ってください。
+- 「今日のニュース」「最新の〜」「現在の価格」のような質問では、推測で答える前に必ず検索してください。
+- 検索結果のページ本文を詳しく読む必要がある場合は、そのURLで web_fetch（または openrouter:web_fetch）を使ってください。
+- 日付・時刻・「今日」「現在」などの正確な時間基準が必要なら current_datetime を使ってください。
 - 検索・Fetch結果を使った場合は出典が分かる形で回答してください。
 
 表示・可視化:
@@ -1375,18 +1429,29 @@ function apiMessages(c){
 function buildTools(includeServerWeb=true){
   const tools=[...functionTools];
   const selected=selectedModel();
-  if(settings.web && includeServerWeb && selected.provider==="openrouter"){
+  const useWeb=Boolean(settings.web);
+  if(!useWeb)return tools;
+
+  if(selected.provider==="openrouter" && includeServerWeb){
+    // Preferred path: OpenRouter Server Tools (model-native, executed upstream).
     const per=Number(settings.webResults||5),calls=clamp(Number(settings.webMaxCalls||4),1,20);
+    const searchParams={
+      max_results:per,
+      max_uses:calls,
+      max_total_results:Math.min(per*calls,100)
+    };
+    // "auto" is the OpenRouter default; omit it so native search can be chosen per model.
+    if(settings.webEngine && settings.webEngine!=="auto")searchParams.engine=settings.webEngine;
     tools.unshift(
       {type:"openrouter:web_fetch",parameters:{engine:"openrouter",max_uses:Math.min(calls,10),max_content_tokens:50000}},
-      {type:"openrouter:web_search",parameters:{
-        engine:settings.webEngine,
-        max_results:per,
-        max_uses:calls,
-        max_total_results:Math.min(per*calls,100)
-      }}
+      {type:"openrouter:web_search",parameters:searchParams}
     );
+    return tools;
   }
+
+  // Groq / B.AI / Experiential Labs / OpenRouter fallback: browser-executed
+  // function tools backed by this app's /api/web-search and /api/web-fetch.
+  tools.unshift(...webFunctionTools);
   return tools;
 }
 
@@ -1397,10 +1462,15 @@ function makeLegacyWebPlugin(){
   return p;
 }
 
+function isServerToolName(name){
+  return typeof name==="string" && name.startsWith("openrouter:");
+}
 function serverToolFailure(error,status=0,detail=""){
   const text=[error?.message,detail].filter(Boolean).join(" ");
-  return status===502 && /server tool request failed/i.test(text)
-      || /server tool request failed/i.test(text);
+  if(/server tool request failed/i.test(text))return true;
+  if(/server.?tool/i.test(text) && /(502|503|unavailable|failed|error|timeout)/i.test(text))return true;
+  if(status===502 && /web.?search|openrouter:web/i.test(text))return true;
+  return false;
 }
 
 async function performStreamRequest(body,onUpdate){
@@ -1543,15 +1613,15 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
 
     if(!settings.web || !e.serverToolFailure || abortController?.signal?.aborted)throw e;
 
-    // OpenRouter server tools are beta. On their 502, retry once without any
-    // openrouter:* tool while keeping all browser-side function tools.
-    setStatus("Web検索を互換モードで再試行","busy");
-    onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"Server Tool 502 → 互換モードで再試行"});
-    toast("OpenRouter Server Toolが502のため、Web検索を互換モードへ切り替えました");
+    // OpenRouter server tools are beta. On failure, retry once with
+    // provider-agnostic function tools (web_search / web_fetch via /api/web-*).
+    setStatus("Web検索をFunction Toolモードで再試行","busy");
+    onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"Server Tool失敗 → Function Toolで再試行"});
+    toast("OpenRouter Server Toolが失敗したため、Web検索をFunction Toolへ切り替えました");
 
     const fallbackMessages=messages.map((m,i)=>{
       if(i===0 && m.role==="system"){
-        return {...m,content:m.content+`\n\n[互換Web検索モード]\nOpenRouter Server Toolが一時的に失敗したため、旧Web Search pluginが検索結果を自動注入します。このラウンドでは openrouter:web_search / web_fetch は利用できません。与えられたWeb情報を使って回答し、必要なら通常のFunction Tool作業を続けてください。`};
+        return {...m,content:m.content+`\n\n[Web検索Function Toolモード]\nOpenRouter Server Toolが一時的に失敗したため、web_search / web_fetch Function Toolに切り替えました。現在情報が必要な場合は必ず web_search を呼び、結果ページを深く読む場合は web_fetch を使ってください。`};
       }
       return m;
     });
@@ -1559,16 +1629,21 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
     const fallbackBody={
       ...baseBody,
       messages:fallbackMessages,
-      tools:buildTools(false),
-      plugins:[makeLegacyWebPlugin()]
+      tools:buildTools(false)
     };
+    delete fallbackBody.plugins;
 
     // Clear any partial failed output in the streaming UI before retry.
     onUpdate?.({role:"assistant",content:"",reasoning:"",reasoning_details:[],annotations:[],tool_calls:[]});
-    const result=await performStreamRequest(fallbackBody,onUpdate);
-    onEvent?.({id:"web-fallback",name:"Web検索",status:"done",detail:"互換Web Searchで完了"});
-    result.webFallback=true;
-    return result;
+    try{
+      const result=await performStreamRequest(fallbackBody,onUpdate);
+      onEvent?.({id:"web-fallback",name:"Web検索",status:"done",detail:"Function Toolで続行"});
+      result.webFallback=true;
+      return result;
+    }catch(fallbackError){
+      onEvent?.({id:"web-fallback",name:"Web検索",status:"failed",detail:"Function Tool再試行も失敗"});
+      throw fallbackError;
+    }
   }
 }
 async function sendMessage(){
@@ -1600,16 +1675,28 @@ async function sendMessage(){
         scheduleStreamingAssistantRender(node,uiMsg);
       });
       flushStreamingAssistantRender(node,uiMsg);
-      upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"done",msg.tool_calls?.length?`${msg.tool_calls.length}件のToolを要求`:"回答を生成");
+      const clientCallCount=(msg.tool_calls||[]).filter(call=>!isServerToolName(call?.function?.name)).length;
+      upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"done",clientCallCount?`${clientCallCount}件のToolを要求`:"回答を生成");
       if(usage){totalCost+=Number(usage.cost||0);totalOut+=Number(usage.completion_tokens||0)}
       if(webFallback)uiMsg.webFallback=true;
       const webUrls=new Set((msg.annotations||[]).filter(a=>a?.url_citation?.url).map(a=>a.url_citation.url));
       if(webUrls.size)upsertActivity(uiMsg,"web-server","Web Search / Fetch","done",`${webUrls.size}件の出典を取得`);
-      if(msg.tool_calls?.length){
-        const assistantForContext={role:"assistant",content:msg.content||"",tool_calls:msg.tool_calls,internal:true};
+      // OpenRouter Server Tools (openrouter:web_search / web_fetch etc.) are executed
+      // upstream. Streaming may still surface those tool_calls for transparency; never
+      // run them in the browser or feed them back as client tool results.
+      const clientToolCalls=(msg.tool_calls||[]).filter(call=>!isServerToolName(call?.function?.name));
+      const serverToolCalls=(msg.tool_calls||[]).filter(call=>isServerToolName(call?.function?.name));
+      if(serverToolCalls.length){
+        for(const call of serverToolCalls){
+          const label=call.function?.name==="openrouter:web_fetch"?"Web Fetch":"Web Search";
+          upsertActivity(uiMsg,`server-${call.id||call.function?.name||"tool"}`,label,"done","OpenRouter Server Toolで処理");
+        }
+      }
+      if(clientToolCalls.length){
+        const assistantForContext={role:"assistant",content:msg.content||"",tool_calls:clientToolCalls,internal:true};
         if(msg.reasoning)assistantForContext.reasoning=msg.reasoning;if(msg.reasoning_details)assistantForContext.reasoning_details=msg.reasoning_details;
         c.messages.push(assistantForContext);
-        for(const call of msg.tool_calls){
+        for(const call of clientToolCalls){
           const requestedActivity=(uiMsg.activity||[]).find(a=>a.status==="requested"&&a.name===friendlyToolName(call.function.name));
           const activityId=requestedActivity?.id||("call-"+(call.id||call.function.name));
           let detail="";

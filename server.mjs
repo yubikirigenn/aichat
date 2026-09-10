@@ -155,6 +155,17 @@ function adaptProviderBody(provider, body, model = null) {
     if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
   }
   if (!supportsTemperature) delete adapted.temperature;
+
+  // OpenRouter Server Tools only work on OpenRouter. Strip them elsewhere so
+  // upstream APIs do not reject the tools array.
+  if (provider.id !== "openrouter" && Array.isArray(adapted.tools)) {
+    adapted.tools = adapted.tools.filter(
+      (tool) => !(tool && typeof tool === "object" && typeof tool.type === "string" && tool.type.startsWith("openrouter:")),
+    );
+    if (!adapted.tools.length) delete adapted.tools;
+    delete adapted.tool_choice;
+  }
+
   return adapted;
 }
 
@@ -439,6 +450,280 @@ app.post("/api/diagnostics", async (req, res) => {
   }
 
   res.json({ ok: steps.every((step) => step.ok), provider: selected.provider, model: selected.id, steps });
+});
+
+const SEARCH_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+function decodeHtmlEntities(text) {
+  return String(text || "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function stripHtml(html) {
+  return decodeHtmlEntities(
+    String(html || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function decodeDdgUrl(href) {
+  const raw = String(href || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, "https://duckduckgo.com");
+    const uddg = url.searchParams.get("uddg");
+    if (uddg) return decodeURIComponent(uddg);
+    if (url.hostname.endsWith("duckduckgo.com") && url.pathname === "/l/") {
+      return raw;
+    }
+    return raw;
+  } catch {
+    return raw;
+  }
+}
+
+function parseDdgHtml(html, maxResults) {
+  const results = [];
+  const seen = new Set();
+  const blocks = String(html || "").split(/class="result\s+results_links/i).slice(1);
+  for (const block of blocks) {
+    if (results.length >= maxResults) break;
+    const hrefMatch = block.match(/class="result__a"[^>]*href="([^"]+)"/i)
+      || block.match(/<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"/i);
+    const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+    const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)
+      || block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div|span)>/i);
+    if (!hrefMatch) continue;
+    const url = decodeDdgUrl(hrefMatch[1]);
+    if (!url || !/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    results.push({
+      title: stripHtml(titleMatch?.[1] || url),
+      url,
+      snippet: stripHtml(snippetMatch?.[1] || "").slice(0, 500),
+    });
+  }
+  return results;
+}
+
+async function duckduckgoSearch(query, maxResults) {
+  const endpoint = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      "User-Agent": SEARCH_UA,
+      Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "ja,en-US;q=0.8,en;q=0.6",
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(20000),
+  });
+  const html = await response.text();
+  if (!response.ok) {
+    throw new Error(`DuckDuckGo search failed: HTTP ${response.status}`);
+  }
+  const results = parseDdgHtml(html, maxResults);
+  if (!results.length) {
+    // Fallback: Instant Answer API (limited but sometimes useful).
+    const ia = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+      { headers: { "User-Agent": SEARCH_UA, Accept: "application/json" }, signal: AbortSignal.timeout(15000) },
+    );
+    if (ia.ok) {
+      const data = await ia.json();
+      if (data.AbstractText && data.AbstractURL) {
+        results.push({
+          title: data.Heading || query,
+          url: data.AbstractURL,
+          snippet: String(data.AbstractText).slice(0, 500),
+        });
+      }
+      for (const topic of data.RelatedTopics || []) {
+        if (results.length >= maxResults) break;
+        if (topic?.FirstURL && topic?.Text) {
+          results.push({ title: String(topic.Text).slice(0, 120), url: topic.FirstURL, snippet: String(topic.Text).slice(0, 400) });
+        }
+      }
+    }
+  }
+  return results.slice(0, maxResults);
+}
+
+function extractReadableText(html, maxChars) {
+  let text = String(html || "");
+  text = text
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ");
+  const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = stripHtml(titleMatch?.[1] || "").slice(0, 200);
+  text = text
+    .replace(/<\/(p|div|section|article|li|h[1-6]|br|tr)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  text = decodeHtmlEntities(text)
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+  if (text.length > maxChars) text = text.slice(0, maxChars) + "\n…[truncated]";
+  return { title, text };
+}
+
+function isPrivateOrLocalUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (!["http:", "https:"].includes(url.protocol)) return true;
+    const host = url.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "0.0.0.0" ||
+      host.endsWith(".local") ||
+      host.endsWith(".internal")
+    ) {
+      return true;
+    }
+    // Block obvious private IPv4 ranges.
+    const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipv4) {
+      const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+      if (a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a === 0) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+app.post("/api/web-search", async (req, res) => {
+  const auth = authorizeRequest(req);
+  if (!auth.ok) return sendAuthError(res, auth);
+
+  const query = String(req.body?.query || "").trim();
+  if (!query) {
+    return res.status(400).json({
+      error: { message: "query is required", code: "invalid_query" },
+      proxy: true,
+    });
+  }
+  const maxResults = Math.min(Math.max(Number(req.body?.max_results) || 5, 1), 10);
+
+  try {
+    const results = await duckduckgoSearch(query, maxResults);
+    return res.json({
+      ok: true,
+      query,
+      provider: "duckduckgo",
+      results,
+      count: results.length,
+      retrieved_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    return res.status(502).json({
+      error: {
+        message: `Web検索に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
+        code: "web_search_failed",
+      },
+      proxy: true,
+    });
+  }
+});
+
+app.post("/api/web-fetch", async (req, res) => {
+  const auth = authorizeRequest(req);
+  if (!auth.ok) return sendAuthError(res, auth);
+
+  const url = String(req.body?.url || "").trim();
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return res.status(400).json({
+      error: { message: "Valid http(s) url is required", code: "invalid_url" },
+      proxy: true,
+    });
+  }
+  if (isPrivateOrLocalUrl(url)) {
+    return res.status(400).json({
+      error: { message: "Local or private URLs cannot be fetched", code: "blocked_url" },
+      proxy: true,
+    });
+  }
+  const maxChars = Math.min(Math.max(Number(req.body?.max_chars) || 12000, 500), 50000);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": SEARCH_UA,
+        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.8,en;q=0.6",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(25000),
+    });
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
+    if (!response.ok) {
+      return res.status(502).json({
+        error: {
+          message: `Fetch failed: HTTP ${response.status}`,
+          code: "web_fetch_failed",
+        },
+        url,
+        status: response.status,
+        proxy: true,
+      });
+    }
+
+    let title = "";
+    let content = "";
+    if (/text\/html|application\/xhtml/i.test(contentType) || /<html[\s>]/i.test(raw.slice(0, 2000))) {
+      const extracted = extractReadableText(raw, maxChars);
+      title = extracted.title;
+      content = extracted.text;
+    } else {
+      content = raw.slice(0, maxChars);
+    }
+
+    return res.json({
+      ok: true,
+      url,
+      title,
+      content,
+      content_type: contentType,
+      status: response.status,
+      retrieved_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    return res.status(502).json({
+      error: {
+        message: timedOut
+          ? "URLの取得がタイムアウトしました。"
+          : `URLの取得に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
+        code: timedOut ? "web_fetch_timeout" : "web_fetch_failed",
+      },
+      url,
+      proxy: true,
+    });
+  }
 });
 
 app.use(express.static(publicDir, { extensions: ["html"] }));
