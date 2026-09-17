@@ -31,7 +31,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - `chart_render` による SVG の折れ線・棒グラフ
 - OpenRouter Web Search / Web Fetch Server Tool
 - OpenRouter 以外（Groq / B.AI / Experiential Labs）でも使える汎用 Web検索
-  - `/api/web-search`（DuckDuckGo経由）と `/api/web-fetch` をサーバで実行
+  - `/api/web-search`（Bing / DuckDuckGo / Wikipedia を順に試行）と `/api/web-fetch` をサーバで実行
   - モデルからは `web_search` / `web_fetch` Function Tool として公開
 - Web Search Server Tool が失敗した場合の Function Tool フォールバック
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
