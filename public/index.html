@@ -50,6 +50,10 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}
 .empty h1{font-size:clamp(27px,4vw,42px);letter-spacing:-.055em;margin:0}.empty p{color:var(--muted);font-size:13px;line-height:1.7;max-width:560px;margin:12px auto 0}
 .message{display:grid;grid-template-columns:30px minmax(0,1fr);gap:11px}.avatar{width:30px;height:30px;border-radius:10px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;font-weight:900;font-size:10px}
 .message.user .avatar{background:var(--accent);color:var(--accentText)}.bubble{min-width:0;padding-top:3px;font-size:14px;line-height:1.72;overflow-wrap:anywhere}
+.messageActions{display:flex;align-items:center;gap:4px;height:0;overflow:visible;opacity:0;pointer-events:none;position:relative;z-index:2;transition:opacity .12s}.message.user .messageActions{justify-content:flex-end}
+.message:hover .messageActions,.message:focus-within .messageActions{opacity:1;pointer-events:auto}
+.messageAction{border:0;border-radius:7px;background:var(--panel2);color:var(--muted);padding:4px 7px;font-size:9px;line-height:1.2;cursor:pointer}.messageAction:hover{color:var(--text);background:var(--panel3)}
+.editMode{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 8px 6px;color:var(--muted);font-size:10px}.editMode[hidden]{display:none}.editMode button{border:0;border-radius:7px;background:var(--panel2);color:var(--muted);padding:5px 8px;font-size:9px}
 .message.user .bubble{white-space:pre-wrap}.bubble p{margin:.15em 0 .9em}.bubble p:last-child{margin-bottom:0}.bubble h1,.bubble h2,.bubble h3{letter-spacing:-.03em;margin:1.1em 0 .45em;line-height:1.25}
 .bubble h1{font-size:1.35em}.bubble h2{font-size:1.2em}.bubble h3{font-size:1.07em}.bubble pre{position:relative;background:#111318;color:#eef0f3;border:1px solid #2b3038;border-radius:13px;padding:13px;overflow:auto;line-height:1.5}
 .bubble code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.9em;background:var(--panel2);border-radius:5px;padding:.12em .32em}.bubble pre code{background:transparent;padding:0}.bubble blockquote{margin:.8em 0;border-left:3px solid var(--line);padding-left:12px;color:var(--muted)}
@@ -192,6 +196,7 @@ html,body{background:var(--bg);color:var(--text)}
 .panelHint{font-size:10px}
 @media(max-width:980px){:root{--play:390px}.sidebar{display:none}.sidebar.mobileOpen{display:flex;position:fixed;z-index:30;left:0;top:0;bottom:0;width:min(300px,86vw);box-shadow:var(--shadow)}.app{grid-template-columns:1fr}.mobileMenu{display:inline-grid}.chatTitle{max-width:260px}}
 @media(max-width:760px){.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{border-left:0}.topbar{height:58px;padding:0 10px}.topBtn{padding:0 8px}.chatScroll{padding:22px 12px 165px}.composerWrap{padding:36px 10px max(10px,env(safe-area-inset-bottom))}.playBody{grid-template-columns:118px minmax(0,1fr)}.row2{grid-template-columns:1fr}.message{grid-template-columns:27px minmax(0,1fr);gap:8px}.avatar{width:27px;height:27px}.bubble{font-size:13.5px}}
+@media(hover:none){.messageActions{height:auto;margin-top:5px;opacity:1;pointer-events:auto}}
 </style>
 </head>
 <body>
@@ -247,6 +252,7 @@ html,body{background:var(--bg);color:var(--text)}
               <span class="chip on" id="timeChip">日時</span>
               <span class="chip on">Charts</span>
             </div>
+            <div class="editMode" id="editMode" hidden><span>メッセージを編集中</span><button type="button" id="cancelEditBtn">キャンセル</button></div>
             <div class="imageAttachments" id="imageAttachments" aria-live="polite"></div>
             <textarea class="prompt" id="prompt" placeholder="メッセージを入力…"></textarea>
             <div class="composerBottom">
@@ -448,7 +454,7 @@ const els = {
   fileList:$("#fileList"), codeEditor:$("#codeEditor"), lineNums:$("#lineNums"), currentPath:$("#currentPath"),
   filePicker:$("#filePicker"), imagePicker:$("#imagePicker"), imageAttachments:$("#imageAttachments"), planPanelContent:$("#planPanelContent"), toolLog:$("#toolLog"), previewFrame:$("#previewFrame"),
   providerSelect:$("#providerSelect"), modelSelect:$("#modelSelect"), modelCapability:$("#modelCapability"), modelChip:$("#modelChip"), sideModelName:$("#sideModelName"), sideModelBadge:$("#sideModelBadge"),
-  webChip:$("#webChip"), reasonChip:$("#reasonChip"), planChip:$("#planChip")
+  webChip:$("#webChip"), reasonChip:$("#reasonChip"), planChip:$("#planChip"), editMode:$("#editMode")
 };
 
 const defaultSettings = {
@@ -468,6 +474,8 @@ let previewTimer = null;
 let modelCatalog = [...FALLBACK_MODELS];
 let providerCatalog = [];
 let pendingImages = [];
+let editingMessageIndex = null;
+let editDraftBackup = null;
 let chatAutoFollow = true;
 let scrollBottomFrame = 0;
 const CHAT_BOTTOM_THRESHOLD = 112;
@@ -705,17 +713,65 @@ async function loadModelCatalog(){
   renderModelControls();syncChips();
 }
 
+function renderEditMode(){
+  const editing=editingMessageIndex!==null;
+  els.editMode.hidden=!editing;
+  els.send.title=editing?"更新して再生成":"送信";
+  els.send.setAttribute("aria-label",editing?"更新して再生成":"送信");
+  if(!running)els.send.textContent=editing?"↻":"↑";
+}
+function cancelMessageEdit({restoreDraft=true}={}){
+  if(editingMessageIndex===null)return;
+  const backup=editDraftBackup;
+  editingMessageIndex=null;editDraftBackup=null;
+  els.prompt.value=restoreDraft&&backup?backup.text:"";
+  pendingImages=restoreDraft&&backup?backup.images:[];
+  renderPendingImages();resizePrompt();renderEditMode();
+}
+function beginMessageEdit(index){
+  if(running){toast("生成中は編集できません");return}
+  if(editingMessageIndex!==null){toast("先に編集中のメッセージを保存するかキャンセルしてください");return}
+  const message=activeChat()?.messages?.[index];
+  if(!message||message.role!=="user"||message.internal)return;
+  editDraftBackup={text:els.prompt.value,images:pendingImages.map(image=>({...image}))};
+  editingMessageIndex=index;
+  els.prompt.value=message.content||"";
+  pendingImages=(message.images||[]).map(image=>({...image}));
+  renderPendingImages();resizePrompt();renderEditMode();els.prompt.focus();
+}
+function refreshChatTitle(c){
+  const firstUser=c.messages.find(message=>message.role==="user");
+  const text=String(firstUser?.content||"").replace(/\s+/g," ").trim();
+  c.title=text.slice(0,34)||(firstUser?.images?.length?"画像チャット":"新しいチャット");
+}
+function deleteMessage(index){
+  if(running){toast("生成中はメッセージを削除できません");return}
+  if(editingMessageIndex!==null){toast("先に編集中のメッセージをキャンセルしてください");return}
+  const c=activeChat(),message=c?.messages?.[index];
+  if(!c||!message||message.internal||!(["user","assistant"].includes(message.role)))return;
+  if(!confirm("このメッセージだけを削除しますか？後続の会話は残ります。"))return;
+  const wasFirstUser=message.role==="user"&&!c.messages.slice(0,index).some(item=>item.role==="user");
+  const hadLaterAssistant=c.messages.slice(index+1).some(item=>item.role==="assistant");
+  const priorPlan=c.messages.slice(0,index).reverse().find(item=>item.role==="assistant"&&item.planSnapshot)?.planSnapshot||null;
+  c.messages.splice(index,1);
+  if(wasFirstUser)refreshChatTitle(c);
+  if(message.role==="assistant"&&message.planSnapshot&&!hadLaterAssistant)c.plan=structuredCloneSafe(priorPlan);
+  c.updatedAt=nowISO();persistChats();renderThread();renderChatList();updateTitle();renderPlan();
+}
+
 function createChat(){
   const c={id:uid(),title:"新しいチャット",createdAt:nowISO(),updatedAt:nowISO(),messages:[],plan:null};
   chats.unshift(c);activeChatId=c.id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();return c;
 }
 function deleteChat(id){
+  if(editingMessageIndex!==null&&id===activeChatId){toast("編集中のメッセージを保存するかキャンセルしてください");return}
   chats=chats.filter(c=>c.id!==id);
   if(activeChatId===id) activeChatId=chats[0]?.id||null;
   if(!activeChatId) createChat(); else {persistChats();renderChatList();renderThread({forceBottom:true});updateTitle()}
 }
 function selectChat(id){
   if(running){toast("生成中はチャットを切り替えられません");return}
+  if(editingMessageIndex!==null&&id!==activeChatId){toast("編集中のメッセージを保存するかキャンセルしてください");return}
   activeChatId=id;renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan();$("#sidebar")?.classList.remove("mobileOpen");
 }
 function updateTitle(){
@@ -1015,8 +1071,9 @@ function renderPlanCard(plan){
   }
   return h+"</div></div>";
 }
-function renderMessage(m){
+function renderMessage(m,messageIndex=null){
   const wrap=document.createElement("div");wrap.className="message "+m.role;
+  if(Number.isInteger(messageIndex))wrap.dataset.messageIndex=String(messageIndex);
   const av=document.createElement("div");av.className="avatar";av.textContent=m.role==="user"?"You":"N";
   const b=document.createElement("div");b.className="bubble";
   if(m.role==="assistant"){
@@ -1054,6 +1111,14 @@ function renderMessage(m){
     appendChatImages(b,m.images);
     if(m.content){const body=document.createElement("div");body.textContent=m.content;b.appendChild(body)}
   }
+  if(Number.isInteger(messageIndex)&&["user","assistant"].includes(m.role)){
+    const actions=document.createElement("div");actions.className="messageActions";
+    if(m.role==="user"){
+      const edit=document.createElement("button");edit.type="button";edit.className="messageAction";edit.dataset.messageAction="edit";edit.textContent="編集";edit.setAttribute("aria-label","メッセージを編集");actions.appendChild(edit);
+    }
+    const remove=document.createElement("button");remove.type="button";remove.className="messageAction";remove.dataset.messageAction="delete";remove.textContent="削除";remove.setAttribute("aria-label","メッセージを削除");actions.appendChild(remove);
+    b.appendChild(actions);
+  }
   wrap.append(av,b);return wrap;
 }
 function renderThread({forceBottom=false}={}){
@@ -1067,7 +1132,7 @@ function renderThread({forceBottom=false}={}){
     if(forceBottom||chatAutoFollow)scrollBottom({force:forceBottom});
     return;
   }
-  for(const m of c.messages) if(!m.internal) els.thread.appendChild(renderMessage(m));
+  for(const [index,m] of c.messages.entries()) if(!m.internal) els.thread.appendChild(renderMessage(m,index));
   if(forceBottom||chatAutoFollow)scrollBottom({force:forceBottom});
   else if(preserveScroll)restoreChatScroll(previousScrollTop);
 }
@@ -1668,8 +1733,24 @@ async function sendMessage(){
   }
   if(!getApiKey()){openSettings();setKeyStatus("アクセスパスワード状態: 未入力","bad");toast("設定画面からアクセスパスワードを入力してください");return}
   const images=pendingImages.map(image=>({...image}));
-  const c=activeChat()||createChat();autoTitle(text||"画像チャット");
-  c.messages.push({role:"user",content:text,images,at:nowISO()});c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();
+  const editIndex=editingMessageIndex;
+  let c=activeChat();
+  if(editIndex!==null){
+    const original=c?.messages?.[editIndex];
+    if(!original||original.role!=="user"||original.internal){toast("編集対象のメッセージが見つかりません");cancelMessageEdit({restoreDraft:false});return}
+    const hasLaterConversation=c.messages.slice(editIndex+1).some(message=>!message.internal&&["user","assistant"].includes(message.role));
+    if(hasLaterConversation&&!confirm("このメッセージ以降の会話を置き換えて、新しい回答を生成します。続けますか？"))return;
+    const isFirstUser=!c.messages.slice(0,editIndex).some(message=>message.role==="user");
+    c.messages[editIndex]={...original,content:text,images,at:nowISO()};
+    c.messages=c.messages.slice(0,editIndex+1);
+    c.plan=null;
+    if(isFirstUser)refreshChatTitle(c);
+    editingMessageIndex=null;editDraftBackup=null;renderEditMode();
+  }else{
+    c=c||createChat();autoTitle(text||"画像チャット");
+    c.messages.push({role:"user",content:text,images,at:nowISO()});
+  }
+  c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();renderPlan();
   const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
   const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
   let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
@@ -1752,7 +1833,7 @@ async function sendMessage(){
     const final={role:"assistant",content:uiMsg.content||"",reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
     c.messages.push(final);c.updatedAt=nowISO();c.messages=c.messages.filter(m=>!m.internal);persistChats();renderThread();renderChatList();
   }finally{
-    running=false;abortController=null;els.send.classList.remove("stop");els.send.textContent="↑";
+    running=false;abortController=null;els.send.classList.remove("stop");renderEditMode();
   }
 }
 function structuredCloneSafe(v){ if(v==null)return null;try{return structuredClone(v)}catch{return JSON.parse(JSON.stringify(v))} }
@@ -1862,11 +1943,18 @@ function exportChat(){
   const c=activeChat();if(!c)return;const selected=selectedModel();downloadBlob((c.title||"chat").replace(/[\\/:*?"<>|]/g,"_")+".json",JSON.stringify({format:"nemotron-chat-v2",provider:selected.provider,model:selected.id,chat:c},null,2),"application/json")
 }
 
-$("#newChatBtn").onclick=()=>{if(!running){createChat();$("#sidebar")?.classList.remove("mobileOpen")}};
+$("#newChatBtn").onclick=()=>{if(running)return;if(editingMessageIndex!==null){toast("編集中のメッセージを保存するかキャンセルしてください");return}createChat();$("#sidebar")?.classList.remove("mobileOpen")};
 $("#settingsBtn").onclick=openSettings;$("#topSettingsBtn").onclick=openSettings;$("#closeSettingsBtn").onclick=()=>els.settings.close();$("#saveSettingsBtn").onclick=saveSettings;$("#testKeyBtn").onclick=testKey;$("#authDiagBtn").onclick=runAuthDiagnostics;
 els.providerSelect.onchange=()=>{settings.provider=els.providerSelect.value;const first=modelCatalog.find(entry=>entry.provider===settings.provider);settings.model=first?.id||DEFAULT_MODEL_ID;renderModelControls();syncChips()};
 els.modelSelect.onchange=()=>{settings.model=els.modelSelect.value;syncChips()};
 els.apiKey.addEventListener("input",()=>{setKeyStatus("アクセスパスワード状態: 未確認（入力内容が変更されました）","");if(els.authDiag)els.authDiag.style.display="none"});
+$("#cancelEditBtn").onclick=()=>cancelMessageEdit();
+els.thread.addEventListener("click",e=>{
+  const button=e.target.closest("[data-message-action]");if(!button)return;
+  const index=Number(button.closest(".message")?.dataset.messageIndex);if(!Number.isInteger(index))return;
+  if(button.dataset.messageAction==="edit")beginMessageEdit(index);
+  else if(button.dataset.messageAction==="delete")deleteMessage(index);
+});
 els.send.onclick=sendMessage;els.prompt.addEventListener("input",resizePrompt);els.prompt.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();sendMessage()}});
 els.prompt.addEventListener("paste",e=>{const files=[...e.clipboardData.items].filter(item=>item.type.startsWith("image/")).map(item=>item.getAsFile()).filter(Boolean);if(files.length){e.preventDefault();addImageFiles(files)}});
 $("#workspaceBtn").onclick=()=>togglePlay();$("#openPlayBtn").onclick=()=>togglePlay(true);$("#exportBtn").onclick=exportChat;
