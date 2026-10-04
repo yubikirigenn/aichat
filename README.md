@@ -20,7 +20,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 ## 主な機能
 
 - Groq / B.AI / Experiential Labs / OpenRouter のプロバイダ選択
-- 2026-09-09時点で確認した無料プラン・無料オファー・`:free`モデルの登録
+- 2026-10-04時点で確認した無料プラン・無料オファー・無料モデルの登録
 - モデル選択を「画像対応」「画像非対応」に分離
 - クリップボード画像の貼り付け、画像ファイル添付、画像プレビュー
 - OpenAI互換のマルチモーダル`messages[].content`による画像送信
@@ -37,8 +37,11 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
 - チャット履歴、ダークモード、JSON エクスポート
 
-Experiential Labsは、2026-09-09に公開カタログで確認できた、アクティブかつホスト提供・支払い不要のテキスト出力モデルを登録しています（画像入力対応もモデルごとに反映）。無料アクセス枠の利用上限・提供条件はモデルやアカウントによって変動します。
-参照元: [Experiential Labs公開モデルカタログ](https://api.experientiallabs.ai/api/models) / [API仕様](https://platform.experientiallabs.ai/llms.txt)
+Experiential Labsは、2026-10-04に公開モデルカタログで無料表示を確認したチャット対応プロモーションモデルと、公式仕様にある日次無料枠モデルを登録しています。日次無料枠（`gpt-6-astra`、`claude-fable-5.1`）には保存済みカードと合計$1以上の決済実績が必要で、時間・日次上限があります。チャットAPIに対応しないJevは除外しています。プロモーションや上限は変更される場合があります。
+
+OpenRouterは、Models APIで入力・出力料金がともに$0、テキストを出力するモデルを登録し、画像入力の有無をモデルごとに反映しています。無料提供に期限があるモデルは選択欄にも期限を表示します。
+
+参照元: [Experiential Labs公開モデルカタログ](https://platform.experientiallabs.ai/models) / [Experiential Labs API仕様](https://platform.experientiallabs.ai/llms.txt) / [OpenRouter Models API](https://openrouter.ai/docs/api/api-reference/models/get-models) / [OpenRouter無料モデル一覧](https://openrouter.ai/collections/free-models)
 
 ## Render への設定
 

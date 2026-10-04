@@ -402,26 +402,37 @@ const DB_NAME = "NemotronWorkspaceDB";
 const DB_VERSION = 1;
 const FILE_STORE = "files";
 const FALLBACK_MODELS = [
-  {provider:"openrouter",providerLabel:"OpenRouter",id:DEFAULT_MODEL_ID,name:"NVIDIA Nemotron 3 Ultra",vision:false,supportsTools:true,freeLabel:":free endpoint",configured:true},
-  {provider:"openrouter",providerLabel:"OpenRouter",id:"openrouter/free",name:"Free Models Router",vision:true,supportsTools:true,freeLabel:":free endpoint",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:DEFAULT_MODEL_ID,name:"NVIDIA Nemotron 3 Ultra",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"openrouter/free",name:"Free Models Router",vision:true,supportsTools:true,freeLabel:"FREE",configured:true},
   {provider:"groq",providerLabel:"Groq",id:"openai/gpt-oss-120b",name:"GPT OSS 120B",vision:false,supportsTools:true,freeLabel:"Free plan枠",configured:false},
   {provider:"groq",providerLabel:"Groq",id:"qwen/qwen3.8-27b",name:"Qwen3.8 27B",vision:true,supportsTools:true,freeLabel:"Free plan枠",configured:false},
   {provider:"bai",providerLabel:"B.AI",id:"glm-5.3-flash",name:"GLM-5.3 Flash",vision:true,supportsTools:true,freeLabel:"API 0 Credits",configured:false},
   {provider:"bai",providerLabel:"B.AI",id:"qwen3.8-flash",name:"Qwen3.8 Flash",vision:true,supportsTools:true,freeLabel:"API 0 Credits",configured:false},
   {provider:"bai",providerLabel:"B.AI",id:"mimo-v2.5",name:"MiMo-V2.5",vision:true,supportsTools:true,freeLabel:"API 0 Credits",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"claude-fable-5.1",name:"Claude Fable 5.1",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"claude-fable-5",name:"Claude Fable 5",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"claude-opus-5",name:"Claude Opus 5",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"claude-sonnet-5",name:"Claude Sonnet 5",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"gpt-5.6-sol",name:"GPT-5.6 Sol",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"gpt-5.6-luna",name:"GPT-5.6 Luna",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"gemini-3.7-flash",name:"Gemini 3.7 Flash",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"kimi-k3",name:"Kimi K3",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"glm-5.3",name:"GLM 5.3",vision:false,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"glm-5.3-flash",name:"GLM-5.3 Flash",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"deepseek-v4-flash",name:"DeepSeek V4 Flash",vision:false,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"qwen3.8-27b",name:"Qwen3.8 27B",vision:true,supportsTools:true,freeLabel:"FREE",configured:false},
-  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"gpt-6-astra",name:"GPT-6 Astra",vision:true,supportsTools:true,freeLabel:"FREE",configured:false}
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"glm-5.3-flash-abliterated",name:"GLM-5.3 Flash Abliterated",vision:true,supportsTools:true,supportsReasoning:true,supportsTemperature:true,freeLabel:"FREE promo",configured:false},
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"gpt-6-luna",name:"GPT-6 Luna",vision:true,supportsTools:true,supportsReasoning:true,supportsTemperature:true,freeLabel:"FREE promo",configured:false},
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"qwen3.8-27b",name:"Qwen3.8 27B",vision:true,supportsTools:true,supportsReasoning:true,supportsTemperature:true,freeLabel:"FREE promo",configured:false},
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"deepseek-v4-flash",name:"DeepSeek V4 Flash",vision:false,supportsTools:true,supportsReasoning:true,supportsTemperature:true,freeLabel:"FREE promo",configured:false},
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"gpt-6-astra",name:"GPT-6 Astra (daily tier)",vision:true,supportsTools:true,supportsReasoning:true,supportsTemperature:false,freeLabel:"FREE daily*",configured:false},
+  {provider:"experientiallabs",providerLabel:"Experiential Labs",id:"claude-fable-5.1",name:"Claude Fable 5.1 (daily tier)",vision:true,supportsTools:true,supportsReasoning:true,supportsTemperature:false,freeLabel:"FREE daily*",configured:false},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"apodex/apodex-1.1-mini:free",name:"Apodex 1.1 Mini",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"cohere/north-mini-code:free",name:"Cohere North Mini Code",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"dots-studio/dots-3-note-preview:free",name:"Dots3 Note Preview",vision:true,supportsTools:true,freeLabel:"FREE · 12/31",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"google/gemma-4-26b-a4b-it:free",name:"Gemma 4 26B A4B",vision:true,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"google/gemma-4-31b-it:free",name:"Gemma 4 31B",vision:true,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"inclusionai/ling-3.0-flash-sante:free",name:"Ling 3.0 Flash Sante",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"inclusionai/ling-3.1-flash",name:"Ling 3.1 Flash",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"liquid/lfm-2.5-2.6b:free",name:"LFM2.5 2.6B",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",name:"NVIDIA Nemotron 3 Nano Omni",vision:true,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"nvidia/nemotron-3-super-120b-a12b:free",name:"NVIDIA Nemotron 3 Super",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"nvidia/nemotron-3.5-content-safety:free",name:"NVIDIA Nemotron 3.5 Content Safety",vision:true,supportsTools:false,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"nvidia/nemotron-3.5-lightning:free",name:"NVIDIA Nemotron 3.5 Lightning",vision:false,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"poolside/laguna-s-2.1:free",name:"Laguna S 2.1",vision:false,supportsTools:true,freeLabel:"FREE · 10/31",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"poolside/laguna-xs-2.1:free",name:"Laguna XS 2.1",vision:false,supportsTools:true,freeLabel:"FREE · 10/31",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"qwen/qwen3.8-27b:free",name:"Qwen3.8 27B",vision:true,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"stealth/space-bunny-alpha",name:"Space Bunny Alpha",vision:true,supportsTools:true,freeLabel:"FREE · 10/05",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"thinkingmachines/inkling:free",name:"Inkling",vision:true,supportsTools:true,freeLabel:"FREE",configured:true},
+  {provider:"openrouter",providerLabel:"OpenRouter",id:"thinkingmachines/inkling-small:free",name:"Inkling Small",vision:true,supportsTools:true,freeLabel:"FREE",configured:true}
 ];
 
 const $ = s => document.querySelector(s);
@@ -665,7 +676,9 @@ function renderModelControls(){
   const selected=selectedModel();
   const provider=providers.find(item=>item.id===selected.provider);
   const configured=providerCatalog.length?provider?.configured!==false:true;
-  els.modelCapability.textContent=`${selected.vision?"画像対応":"画像非対応"} · ${selected.freeLabel}${configured?"":" · APIキー未設定"}`;
+  const dailyFreeNote=selected.freeLabel==="FREE daily*"?" · 条件: カード登録+$1以上の決済実績、時間・日次上限":"";
+  els.modelCapability.title=selected.note||"";
+  els.modelCapability.textContent=`${selected.vision?"画像対応":"画像非対応"} · ${selected.freeLabel}${dailyFreeNote}${configured?"":" · APIキー未設定"}`;
   els.modelCapability.className="modelCapability"+(selected.vision?" vision":"")+(!configured?" missing":"");
 }
 function syncChips(){
