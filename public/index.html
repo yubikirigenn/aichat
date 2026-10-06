@@ -1491,8 +1491,9 @@ Web:
 - 日本語で回答してください。
 ${settings.systemPrompt?`\nユーザー追加System Prompt:\n${settings.systemPrompt}`:""}`;
 }
-function apiMessages(c){
-  return [{role:"system",content:buildSystemPrompt()},...c.messages.filter(m=>["user","assistant","tool"].includes(m.role)).map(m=>{
+function apiMessages(c,webRecoveryGuidance=""){
+  const systemPrompt=buildSystemPrompt()+(webRecoveryGuidance?`\n\n[検索復旧指示]\n${webRecoveryGuidance}`:"");
+  return [{role:"system",content:systemPrompt},...c.messages.filter(m=>["user","assistant","tool"].includes(m.role)).map(m=>{
     const x={role:m.role,content:m.content??""};
     if(m.role==="user"&&m.images?.some(image=>safeImageDataUrl(image?.dataUrl))){
       x.content=[{type:"text",text:m.content||"この画像を確認してください。"},...m.images.filter(image=>safeImageDataUrl(image?.dataUrl)).map(image=>({type:"image_url",image_url:{url:image.dataUrl}}))];
@@ -1544,11 +1545,32 @@ function isServerToolName(name){
   return typeof name==="string" && name.startsWith("openrouter:");
 }
 function serverToolFailure(error,status=0,detail=""){
-  const text=[error?.message,detail].filter(Boolean).join(" ");
+  const code=String(error?.code||"");
+  const text=[code,error?.message,detail,error?.rawDetail].filter(Boolean).join(" ");
+  if(/(?:server|web)[_ -]?tool[_ -]?(?:request[_ -]?)?(?:fail|error)|web[_ -]?search[_ -]?(?:fail|error)|search[_ -]?provider[_ -]?(?:fail|error)/i.test(code))return true;
   if(/server tool request failed/i.test(text))return true;
-  if(/server.?tool/i.test(text) && /(502|503|unavailable|failed|error|timeout)/i.test(text))return true;
-  if(status===502 && /web.?search|openrouter:web/i.test(text))return true;
+  if(/server.?tool|openrouter:web_search/i.test(text) && /(400|403|408|425|429|502|503|504|unavailable|fail|error|timeout|denied|limit|invalid|unsupported)/i.test(text))return true;
+  if(/(?:web\s*search|web_search|exa|firecrawl|parallel|perplexity)/i.test(text) && /(fail|error|timeout|unavailable|denied|limit|invalid|unsupported|400|403|404|408|425|429|502|503|504)/i.test(text))return true;
+  if(status===502 && /web.?search|openrouter:web|server.?tool/i.test(text))return true;
   return false;
+}
+function hasOpenRouterWebSearch(body){
+  return Array.isArray(body?.tools)&&body.tools.some(tool=>tool?.type==="openrouter:web_search");
+}
+function incompleteServerSearchResponse(result){
+  const msg=result?.msg;
+  const attempted=msg?.tool_calls?.some(call=>call?.function?.name==="openrouter:web_search");
+  const content=String(msg.content||"").trim();
+  const hasCitations=(msg.annotations||[]).some(annotation=>annotation?.url_citation?.url);
+  const searchFailureText=/(?:web\s*search|search|server\s*tool|検索).{0,80}(?:fail(?:ed|ure)?|error|unavailable|could not|couldn't|unable|timed?\s*out|no\s+(?:web\s+)?search\s+results|not found|失敗|エラー|できません|利用できません|ありません|見つかりません)|(?:fail(?:ed|ure)?|error|unavailable|could not|couldn't|unable|timed?\s*out).{0,80}(?:web\s*search|search|server\s*tool)/i.test(content);
+  if(!attempted)return !hasCitations&&searchFailureText;
+  if(!content)return true;
+  if(!hasCitations&&searchFailureText)return true;
+  return false;
+}
+function transientRequestFailure(error){
+  const status=Number(error?.httpStatus||0);
+  return !status||status===408||status===425||status===429||status>=500;
 }
 
 async function performStreamRequest(body,onUpdate){
@@ -1564,9 +1586,11 @@ async function performStreamRequest(body,onUpdate){
     const provider=selectedModel();
     const label=provider.providerLabel||provider.provider;
     const e=new Error(`${label} ${res.status}: ${detail.slice(0,2000)}`);
+    const errorBody=safeJSON(detail,{});
     e.httpStatus=res.status;
-    e.serverToolFailure=serverToolFailure(e,res.status,detail);
-    e.authFailure=res.status===401||res.status===403;
+    e.code=errorBody?.error?.code||errorBody?.code||"";
+    e.serverToolFailure=serverToolFailure(e,res.status,detail)||(res.status===403&&body.provider==="openrouter"&&hasOpenRouterWebSearch(body));
+    e.authFailure=(res.status===401||res.status===403)&&!e.serverToolFailure;
     e.rawDetail=detail;
     throw e;
   }
@@ -1592,9 +1616,11 @@ async function performStreamRequest(body,onUpdate){
       if(data.error){
         const e=new Error(data.error.message||JSON.stringify(data.error));
         e.httpStatus=Number(data.error.code||0);
-        e.serverToolFailure=serverToolFailure(e,e.httpStatus,JSON.stringify(data.error));
-        e.authFailure=e.httpStatus===401||e.httpStatus===403;
+        e.code=data.error.code||"";
+        e.serverToolFailure=serverToolFailure(e,e.httpStatus,JSON.stringify(data.error))||(e.httpStatus===403&&body.provider==="openrouter"&&hasOpenRouterWebSearch(body));
+        e.authFailure=(e.httpStatus===401||e.httpStatus===403)&&!e.serverToolFailure;
         e.rawDetail=JSON.stringify(data.error);
+        e.partialMessage=msg;
         throw e;
       }
       if(data.usage)usage=data.usage;
@@ -1631,7 +1657,66 @@ async function performStreamRequest(body,onUpdate){
   return {msg,usage,finish};
 }
 
-async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
+async function retryWithClientWebTools(baseBody,onUpdate,onEvent,reason="server-error",failedCalls=[]){
+  const instruction=reason==="incomplete"
+    ?"OpenRouter標準Web検索の呼び出しから最終回答または検索結果が返りませんでした。検索を諦めず、web_search Function Toolを必ず呼び出してください。直前と同じ検索語を繰り返さず、主要語を言い換えた短いクエリで試し、得られた結果を使って回答してください。"
+    :"OpenRouter標準Web検索が失敗しました。検索を諦めず、web_search Function Toolを必ず呼び出してください。元の依頼に沿った短い検索クエリで検索し、結果が得られない場合は検索語を言い換えて再試行してください。";
+  const fallbackMessages=(baseBody.messages||[]).map((message,index)=>index===0&&message.role==="system"
+    ?{...message,content:`${message.content}\n\n[Web検索復旧モード]\n${instruction}`}
+    :message);
+  const fallbackBody={
+    ...baseBody,
+    messages:fallbackMessages,
+    tools:buildTools(false),
+    tool_choice:{type:"function",function:{name:"web_search"}}
+  };
+  delete fallbackBody.plugins;
+
+  for(const call of failedCalls){
+    if(call?.function?.name==="openrouter:web_search")onEvent?.({id:`server-${call.id||call.function.name}`,name:"Web Search",status:"failed",detail:"OpenRouter標準検索が未完了 · 代替検索へ切替"});
+  }
+  setStatus("Web検索をFunction Toolで再試行","busy");
+  onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"標準検索が失敗 · 検索語を修正して代替Toolへ切替"});
+  toast("Web検索を別経路で再試行します");
+  let lastError=null;
+  for(let attempt=1;attempt<=2;attempt++){
+    if(abortController?.signal?.aborted)throw new DOMException("Aborted","AbortError");
+    onUpdate?.({role:"assistant",content:"",reasoning:"",reasoning_details:[],annotations:[],tool_calls:[]});
+    try{
+      const result=await performStreamRequest(fallbackBody,onUpdate);
+      const calledWebSearch=result.msg?.tool_calls?.some(call=>call?.function?.name==="web_search");
+      if(!calledWebSearch){
+        if(attempt===1){
+          fallbackBody.messages=fallbackBody.messages.map((message,index)=>index===0&&message.role==="system"
+            ?{...message,content:`${message.content}\n\n[再試行]\n直前の応答では検索Toolが呼び出されませんでした。web_searchを今すぐ呼び出してください。`}
+            :message);
+          onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"検索Tool未呼び出し · 指示を修正して再試行"});
+          continue;
+        }
+        throw new Error("検索復旧時にweb_search Toolが呼び出されませんでした。");
+      }
+      onEvent?.({id:"web-fallback",name:"Web検索",status:"done",detail:"Function Toolへ切替 · 検索を再開"});
+      result.webFallback=true;
+      return result;
+    }catch(error){
+      lastError=error;
+      if(abortController?.signal?.aborted||error.authFailure)throw error;
+      if(attempt===1&&transientRequestFailure(error)){
+        await new Promise(resolve=>setTimeout(resolve,650));
+        fallbackBody.messages=fallbackBody.messages.map((message,index)=>index===0&&message.role==="system"
+          ?{...message,content:`${message.content}\n\n[再試行]\n前回のFunction Tool要求も一時エラーでした。検索Toolを維持したまま、一度だけ再度試してください。`}
+          :message);
+        onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"一時エラー · 代替検索を1回再試行"});
+        continue;
+      }
+      break;
+    }
+  }
+  onEvent?.({id:"web-fallback",name:"Web検索",status:"failed",detail:"Function Toolによる復旧も失敗"});
+  throw lastError||new Error("Web検索の復旧に失敗しました。");
+}
+
+async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClientWeb=false,forceTool=null}={}){
   const key=getApiKey();
   if(!key)throw new Error("アクセスパスワードが未入力です。設定から入力してください。");
 
@@ -1647,13 +1732,15 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
     max_tokens:Number(settings.maxTokens)
   };
   if(selected.supportsTools){
-    baseBody.tools=buildTools(true);
-    baseBody.tool_choice=forcedPlan?{type:"function",function:{name:"plan_create"}}:"auto";
+    baseBody.tools=buildTools(!forceClientWeb);
+    baseBody.tool_choice=forceTool?{type:"function",function:{name:forceTool}}:forcedPlan?{type:"function",function:{name:"plan_create"}}:"auto";
   }
   if(settings.reasoning)baseBody.reasoning={enabled:true,exclude:false};
+  const hasServerSearch=selected.provider==="openrouter"&&settings.web&&!forceClientWeb&&hasOpenRouterWebSearch(baseBody);
 
+  let result;
   try{
-    return await performStreamRequest(baseBody,onUpdate);
+    result=await performStreamRequest(baseBody,onUpdate);
   }catch(e){
     if(e.authFailure && !abortController?.signal?.aborted){
       onEvent?.({id:"auth-check",name:"Renderアクセス認証","status":"running",detail:`HTTP ${e.httpStatus} → パスワードを確認中`});
@@ -1689,40 +1776,27 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent){
       throw authErr;
     }
 
-    if(!settings.web || !e.serverToolFailure || abortController?.signal?.aborted)throw e;
-
-    // OpenRouter server tools are beta. On failure, retry once with
-    // provider-agnostic function tools (web_search / web_fetch via /api/web-*).
-    setStatus("Web検索をFunction Toolモードで再試行","busy");
-    onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"Server Tool失敗 → Function Toolで再試行"});
-    toast("OpenRouter Server Toolが失敗したため、Web検索をFunction Toolへ切り替えました");
-
-    const fallbackMessages=messages.map((m,i)=>{
-      if(i===0 && m.role==="system"){
-        return {...m,content:m.content+`\n\n[Web検索Function Toolモード]\nOpenRouter Server Toolが一時的に失敗したため、web_search / web_fetch Function Toolに切り替えました。現在情報が必要な場合は必ず web_search を呼び、結果ページを深く読む場合は web_fetch を使ってください。`};
+    if(forceTool==="web_search"&&transientRequestFailure(e)&&!abortController?.signal?.aborted){
+      setStatus("修正したWeb検索を再試行中","busy");
+      onEvent?.({id:"web-fallback",name:"Web検索",status:"running",detail:"修正クエリ要求が一時失敗 · 1回再試行"});
+      await new Promise(resolve=>setTimeout(resolve,650));
+      onUpdate?.({role:"assistant",content:"",reasoning:"",reasoning_details:[],annotations:[],tool_calls:[]});
+      try{
+        const retry=await performStreamRequest(baseBody,onUpdate);
+        onEvent?.({id:"web-fallback",name:"Web検索",status:"done",detail:"修正クエリ要求を再試行"});
+        return retry;
+      }catch(retryError){
+        onEvent?.({id:"web-fallback",name:"Web検索",status:"failed",detail:"修正クエリ要求の再試行も失敗"});
+        throw retryError;
       }
-      return m;
-    });
-
-    const fallbackBody={
-      ...baseBody,
-      messages:fallbackMessages,
-      tools:buildTools(false)
-    };
-    delete fallbackBody.plugins;
-
-    // Clear any partial failed output in the streaming UI before retry.
-    onUpdate?.({role:"assistant",content:"",reasoning:"",reasoning_details:[],annotations:[],tool_calls:[]});
-    try{
-      const result=await performStreamRequest(fallbackBody,onUpdate);
-      onEvent?.({id:"web-fallback",name:"Web検索",status:"done",detail:"Function Toolで続行"});
-      result.webFallback=true;
-      return result;
-    }catch(fallbackError){
-      onEvent?.({id:"web-fallback",name:"Web検索",status:"failed",detail:"Function Tool再試行も失敗"});
-      throw fallbackError;
     }
+
+    const recoverableStatus=transientRequestFailure(e)||[400,403,422].includes(Number(e.httpStatus));
+    if(!hasServerSearch || !(e.serverToolFailure||recoverableStatus) || abortController?.signal?.aborted)throw e;
+    return await retryWithClientWebTools(baseBody,onUpdate,onEvent,"server-error",e.partialMessage?.tool_calls||[]);
   }
+  if(hasServerSearch&&incompleteServerSearchResponse(result))return await retryWithClientWebTools(baseBody,onUpdate,onEvent,"incomplete",result.msg?.tool_calls||[]);
+  return result;
 }
 async function sendMessage(){
   if(running){abortController?.abort();return}
@@ -1754,10 +1828,13 @@ async function sendMessage(){
   const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
   const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
   let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
+  let webRecoveryGuidance="",webRecoveryAttempts=0,forceNextWebSearch=false,useClientWebFallback=false;
   try{
     while(rounds<Number(settings.maxRounds)){
       rounds++;setStatus(rounds===1&&forcedPlan?"計画を作成中":`実行中 · round ${rounds}`,"busy");
-      const msgs=apiMessages(c);
+      const retryWebSearch=forceNextWebSearch;
+      const msgs=apiMessages(c,webRecoveryGuidance);
+      webRecoveryGuidance="";forceNextWebSearch=false;
       upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"running",rounds===1&&forcedPlan?"計画作成を要求中":`round ${rounds} · 推論 / Tool選択`);
       renderStreamingAssistant(node,uiMsg);
       const {msg,usage,webFallback}=await streamRound(msgs,forcedPlan&&rounds===1,(partial)=>{
@@ -1767,12 +1844,12 @@ async function sendMessage(){
       },ev=>{
         upsertActivity(uiMsg,ev.id,ev.name,ev.status,ev.detail);
         scheduleStreamingAssistantRender(node,uiMsg);
-      });
+      },{forceClientWeb:useClientWebFallback,forceTool:retryWebSearch?"web_search":null});
       flushStreamingAssistantRender(node,uiMsg);
       const clientCallCount=(msg.tool_calls||[]).filter(call=>!isServerToolName(call?.function?.name)).length;
       upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"done",clientCallCount?`${clientCallCount}件のToolを要求`:"回答を生成");
       if(usage){totalCost+=Number(usage.cost||0);totalOut+=Number(usage.completion_tokens||0)}
-      if(webFallback)uiMsg.webFallback=true;
+      if(webFallback){uiMsg.webFallback=true;useClientWebFallback=true}
       const webUrls=new Set((msg.annotations||[]).filter(a=>a?.url_citation?.url).map(a=>a.url_citation.url));
       if(webUrls.size)upsertActivity(uiMsg,"web-server","Web Search / Fetch","done",`${webUrls.size}件の出典を取得`);
       // OpenRouter Server Tools (openrouter:web_search / web_fetch etc.) are executed
@@ -1802,8 +1879,19 @@ async function sendMessage(){
           renderStreamingAssistant(node,uiMsg);
           await new Promise(r=>requestAnimationFrame(()=>r()));
           const result=await executeTool(call);
+          const isWebSearch=call.function?.name==="web_search";
+          const emptyWebSearch=isWebSearch&&result.ok!==false&&Number(result.count??result.results?.length??0)===0;
+          const failedWebSearch=isWebSearch&&(result.ok===false||emptyWebSearch);
+          if(isWebSearch&&selected.provider==="openrouter")useClientWebFallback=true;
+          if(failedWebSearch&&webRecoveryAttempts<2){
+            webRecoveryAttempts++;
+            forceNextWebSearch=true;
+            webRecoveryGuidance=`直前のweb_searchは${result.ok===false?"エラー":"0件"}でした。ここで回答を打ち切らず、主要語を言い換えた短い別の検索クエリを作ってweb_searchを再実行してください。修正再試行は残り最大${2-webRecoveryAttempts}回です。結果が得られたらその出典を使って回答してください。`;
+          }else if(isWebSearch){
+            forceNextWebSearch=false;webRecoveryGuidance="";
+          }
           const ev=toolLog[0];if(ev)uiMsg.toolEvents.push(ev);
-          upsertActivity(uiMsg,activityId,friendlyToolName(call.function.name),result.ok===false?"failed":"done",result.ok===false?(result.error||"失敗"):(ev?.summary||detail||"完了"));
+          upsertActivity(uiMsg,activityId,friendlyToolName(call.function.name),failedWebSearch?"failed":"done",failedWebSearch?(result.error||"検索結果0件 · クエリを修正して再試行"):(ev?.summary||detail||"完了"));
           c.messages.push({role:"tool",tool_call_id:call.id,name:call.function.name,content:JSON.stringify(result),internal:true});
           uiMsg.planSnapshot=structuredCloneSafe(c.plan);renderStreamingAssistant(node,uiMsg);
         }
