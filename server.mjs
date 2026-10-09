@@ -156,23 +156,31 @@ function adaptProviderBody(provider, body, model = null) {
   if (!supportsReasoning) {
     delete adapted.reasoning;
     delete adapted.reasoning_effort;
-  } else if (provider.reasoningParameter === "reasoning_effort" && adapted.reasoning) {
+  } else if (provider.id !== "gemini" && provider.reasoningParameter === "reasoning_effort" && adapted.reasoning) {
     const enabled = adapted.reasoning.enabled !== false;
     delete adapted.reasoning;
     if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
-    else if (provider.id === "gemini" && /^gemini-2\.5-(?:flash|flash-lite)$/.test(adapted.model)) adapted.reasoning_effort = "none";
   }
   if (!supportsTemperature) delete adapted.temperature;
   if (provider.id === "gemini") {
     delete adapted.reasoning; delete adapted.plugins;
+    delete adapted.reasoning_effort;
     delete adapted.service_tier;
     adapted.messages = (adapted.messages || []).map(message => {
       const { reasoning: _reasoning, reasoning_details: _details, ...rest } = message;
       return rest;
     });
-    // Thought summaries use Google's documented OpenAI-compatible extension.
-    adapted.extra_body = { google: { thinking_config: { include_thoughts: true } } };
-    if (body.reasoning?.enabled === false) delete adapted.extra_body;
+    // Gemini rejects reasoning_effort even when thinking_config only requests
+    // summaries. Use one configuration path, including OFF/diagnostic requests.
+    delete adapted.extra_body;
+    if (supportsReasoning) {
+      const enabled = body.reasoning?.enabled === true;
+      const config = { include_thoughts: enabled };
+      if (/^gemini-2\.5-/.test(adapted.model)) {
+        config.thinking_budget = !enabled && /^gemini-2\.5-(?:flash|flash-lite)$/.test(adapted.model) ? 0 : 1024;
+      } else config.thinking_level = "low";
+      adapted.extra_body = { google: { thinking_config: config } };
+    }
   }
 
   // OpenRouter Server Tools only work on OpenRouter. Strip them elsewhere so

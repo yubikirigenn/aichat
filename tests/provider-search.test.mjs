@@ -33,11 +33,25 @@ test("Gemini adapter translates reasoning, keeps tool choice and tool signatures
   const signature={google:{thought_signature:"sample-signature"}};
   const body={model:model.id,reasoning:{enabled:true},tools:[{type:"function",function:{name:"web_search"}},{type:"openrouter:web_search"}],tool_choice:{type:"function",function:{name:"web_search"}},plugins:[{id:"web"}],service_tier:"priority",messages:[{role:"assistant",reasoning:"summary",tool_calls:[{extra_content:signature}]}]};
   const result=adapt(PROVIDERS.gemini,body,model);
-  assert.equal(result.reasoning_effort,"low");assert.equal(result.reasoning,undefined);assert.equal(result.tools.length,1);
+  assert.equal(result.reasoning_effort,undefined);assert.equal(result.reasoning,undefined);assert.equal(result.tools.length,1);
   assert.equal(result.tool_choice.function.name,"web_search");assert.equal(result.service_tier,undefined);assert.equal(result.plugins,undefined);
   assert.equal(result.extra_body.google.thinking_config.include_thoughts,true);
+  assert.equal(result.extra_body.google.thinking_config.thinking_level,"low");
   assert.equal(result.messages[0].reasoning,undefined);assert.equal(result.messages[0].tool_calls[0].extra_content,signature);
   assert.equal(body.tools.length,2);
+});
+test("every Gemini model uses only thinking_config for ON, OFF and diagnostics",()=>{
+  for(const model of MODEL_CATALOG.filter(m=>m.provider==="gemini"))for(const reasoning of [{enabled:true},{enabled:false},undefined]){
+    const body={model:model.id,messages:[],reasoning,reasoning_effort:"high",extra_body:{google:{thinking_config:{thinking_budget:999}}}};
+    const result=adapt(PROVIDERS.gemini,body,model),config=result.extra_body.google.thinking_config;
+    assert.equal(result.reasoning_effort,undefined,model.id);
+    assert.equal(config.include_thoughts,reasoning?.enabled===true);
+    if(model.id.startsWith("gemini-2.5-")){
+      assert.equal(config.thinking_level,undefined);
+      assert.equal(config.thinking_budget,reasoning?.enabled!==true&&/^gemini-2\.5-(?:flash|flash-lite)$/.test(model.id)?0:1024);
+    }else{assert.equal(config.thinking_level,"low");assert.equal(config.thinking_budget,undefined)}
+    assert.equal(body.reasoning_effort,"high");assert.equal(body.extra_body.google.thinking_config.thinking_budget,999);
+  }
 });
 test("billing guards block XPL even with a key, and Gemini until free-project confirmation",()=>{
   const accessSource=server.slice(server.indexOf("function providerAccess("),server.indexOf("function redactSecrets("));
