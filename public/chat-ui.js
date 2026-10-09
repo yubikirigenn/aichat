@@ -104,7 +104,7 @@ function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
       if(event.name?.startsWith("plan_")&&msg.planSnapshot)html+=renderPlanCard(msg.planSnapshot);
       if(args.path)html+=`<button type="button" class="artifactLink" data-open-artifact="${escapeHTML(args.path)}">${escapeHTML(args.path)}</button>`;
       html+=`<details><summary>実行データ</summary><pre>${escapeHTML(JSON.stringify(event.detail||{},null,2).slice(0,12000))}</pre></details>`;
-      if(result?.results?.length)html+=result.results.map(r=>`<p><a href="${escapeHTML(safeResultUrl(r.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(r.title||r.url)}</a><br>${escapeHTML(r.snippet||"")}</p>`).join("");
+      if(result?.results?.length)html+=result.results.map(r=>`<p><a href="${escapeHTML(safeResultUrl(r.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(r.title||(r.author?.handle?`@${r.author.handle} · ${r.created_at||""}`:r.url))}</a><br>${escapeHTML(r.snippet||r.text||"")}</p>`).join("");
       if(result?.chart&&!row.autoOpened){row.node.open=true;row.autoOpened=true}
     }else if(item.kind==="plan")html=renderPlanCard(msg.planSnapshot);
     else html=`<div>${escapeHTML(activity?.detail||"実行中")}</div>`;

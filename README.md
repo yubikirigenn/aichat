@@ -30,6 +30,10 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - IndexedDB の Playground（作成、読込、差分編集、追記、検索、名前変更、削除、履歴、プレビュー）
 - `chart_render` による SVG の折れ線・棒グラフ
 - OpenRouter Web Search / Web Fetch Server Tool
+- Xのキーワード検索 `x_search`（Web検索をONにして利用）
+  - [X公式Recent Search](https://docs.x.com/x-api/posts/search/quickstart/recent-search)で直近7日間の公開投稿を検索。投稿URLの入力は不要です。`from:ユーザー名`、`lang:ja`、`-is:retweet`、ハッシュタグ、完全一致、ORなどのX検索構文に対応
+  - Renderに `X_BEARER_TOKEN` を設定し、[Xの料金・クレジットと検索権限](https://docs.x.com/x-api/getting-started/pricing)を確認後のみ `X_SEARCH_ENABLED=true` を設定。公式APIは無料を保証せず従量課金が発生し得るため初期値はfalseです。キーはブラウザやモデルへ送りません
+  - 1回10〜20件・1ページのみ。`sort_order` は `recency` / `relevancy`、必要時だけ `next_token` で次ページへ。自動ページ送り・自動再試行なし。同一クエリ・条件は30秒キャッシュし同時要求をまとめます（単一サーバープロセス内）。画像内容・返信全体は取得しません
 - X/Twitterの公開投稿を読む `x_read_post`（Web検索をONにして利用）
   - 投稿URLを渡すと本文・投稿者・日時・取得できた引用・メディアURLを取得し、実行履歴に表示。通常の`web_fetch`に渡された投稿URLも同じ経路を使います
   - [FxEmbedの公開API](https://github.com/FxEmbed/FxEmbed/wiki/Status-Fetch-API)をRenderから利用。XのAPIキー・ログインは不要ですが、投稿IDがこの第三者サービスに送られます
@@ -38,6 +42,8 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - Gemini / Groq / OpenRouterで使える汎用 Web検索
   - `web_search` は単一の `query` に加え `queries`（最大6件）に対応。最大3クエリを並列実行し、各クエリの成功・失敗・0件を区別して返します。共通フィルターを適用し、結果URLを重複排除します
   - `/api/web-search`（Bing / DuckDuckGoを並列取得、必要時にLiteへフォールバック）と `/api/web-fetch` をサーバで実行
+  - 有効な検索結果が届いたら追加200msだけ別エンジンの結果を集約し、遅い通信をキャンセル。1秒間有効結果がなければLiteを先行開始し、1クエリ全体の待ち時間を6.5秒に制限します。結果の `elapsed_ms` / `backend_timings` / `partial` / `deadline_reached` で時間・一部返却を確認できます。絞り込みは緩めません
+  - 複数クエリは全件完了後に返します（3並列・最大6件）。全エンジンの取得完了前に返す場合は網羅性が下がり得ます。OpenRouter標準Server Toolの検索時間にはこの制御は適用されません
   - モデルからは `web_search` / `web_fetch` Function Tool として公開
 - 検索の詳細絞り込み（OpenRouterでもFunction Toolとして利用可能）
   - 対象・除外ドメイン、完全一致フレーズ、除外語、ファイル形式、直近1日／1週／1か月／1年、言語・地域

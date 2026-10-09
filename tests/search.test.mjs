@@ -68,6 +68,36 @@ test("irrelevant/failed first engines trigger fallback; zero matches return reco
 });
 
 // Exercise existing HTML parsers with fixtures, without starting a server.
+test("useful fast results return without waiting for stalled engines, cancelling losers", async () => {
+  let slowSignal, fallbackRan = false;
+  const response = await runSearch([
+    { id: "fast", run: async () => [result("https://render.com/node")] },
+    { id: "slow", run: (_q, _n, _o, signal) => { slowSignal = signal; return new Promise(() => {}); } },
+    { id: "lite", run: async () => { fallbackRan = true; return []; } },
+  ], "Render Node", 5, options({}), { settleMs: 5, hedgeMs: 100, deadlineMs: 200 });
+  assert.equal(response.results.length, 1); assert.equal(response.partial, true);
+  assert.equal(response.deadline_reached, false); assert.equal(slowSignal.aborted, true);
+  assert.equal(fallbackRan, false); assert.equal(response.backend_timings[0].provider, "fast");
+  assert.deepEqual(response.errors, []);
+});
+
+test("fallback starts before stuck primary engines finish", async () => {
+  const signals = [];
+  const stuck = id => ({ id, run: (_q, _n, _o, signal) => { signals.push(signal); return new Promise(() => {}); } });
+  const response = await runSearch([stuck("bing"), stuck("ddg"), { id: "lite", run: async () => [result("https://render.com/node")] }],
+    "Render Node", 5, options({}), { hedgeMs: 5, settleMs: 5, deadlineMs: 200 });
+  assert.equal(response.provider, "lite"); assert.equal(response.results.length, 1);
+  assert.equal(response.deadline_reached, false); assert.ok(signals.every(signal => signal.aborted));
+});
+
+test("one total deadline bounds stalled searches and preserves completed empty results", async () => {
+  const stuck = { id: "stuck", run: () => new Promise(() => {}) };
+  const response = await runSearch([{ id: "empty", run: async () => [] }, stuck], "Render", 5, options({}), { deadlineMs: 10, hedgeMs: 2 });
+  assert.equal(response.deadline_reached, true); assert.equal(response.results.length, 0);
+  assert.ok(response.recovery_hint); assert.ok(response.errors.some(message => message.includes("時間上限")));
+  await assert.rejects(runSearch([stuck], "Render", 5, options({}), { deadlineMs: 10, hedgeMs: 2 }), /All search backends failed/);
+});
+
 const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
 function helpers(names) {
   const source = names.map(name => {

@@ -1,5 +1,5 @@
 /* Provider-independent scheduling and context policy. No credentials or eval. */
-const READ_ONLY_TOOLS = new Set(["web_search","web_fetch","x_read_post","current_datetime","workspace_list_files","workspace_read_file","workspace_search_files","workspace_check_file","tool_result_read","tool_result_search","chat_history_read"]);
+const READ_ONLY_TOOLS = new Set(["web_search","web_fetch","x_search","x_read_post","current_datetime","workspace_list_files","workspace_read_file","workspace_search_files","workspace_check_file","tool_result_read","tool_result_search","chat_history_read"]);
 function stableToolKey(call) {
   function sorted(value) { if(Array.isArray(value))return value.map(sorted);if(value&&typeof value==="object")return Object.fromEntries(Object.keys(value).sort().map(key=>[key,sorted(value[key])]));return value; }
   let args=call.function?.arguments||"{}";try{args=JSON.stringify(sorted(JSON.parse(args)))}catch{}

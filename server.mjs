@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { normalizeSearchOptions, runSearch, normalizeSearchQueries, runSearchBatch } from "./search.mjs";
 import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
+import { createXSearcher, normalizeXSearch } from "./x-search.mjs";
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_KEY,
@@ -594,7 +595,7 @@ function ddgSearchParams(query, options) {
   return params;
 }
 
-async function searchViaBing(query, maxResults, options) {
+async function searchViaBing(query, maxResults, options, signal) {
   const { language, region, accept } = searchLocale(options);
   const params = new URLSearchParams({ q: query, setlang: language, cc: region, count: String(maxResults) });
   const days = { day: 1, week: 7, month: 30, year: 365 }[options.time_range];
@@ -608,7 +609,7 @@ async function searchViaBing(query, maxResults, options) {
       "Accept-Language": accept,
     },
     redirect: "follow",
-    signal: AbortSignal.timeout(8000),
+    signal: signal || AbortSignal.timeout(6500),
   });
   if (!response.ok) throw new Error(`Bing HTTP ${response.status}`);
   const html = await response.text();
@@ -668,7 +669,7 @@ function parseDdgLiteHtml(html, maxResults) {
   return results;
 }
 
-async function searchViaDdgHtml(query, maxResults, options) {
+async function searchViaDdgHtml(query, maxResults, options, signal) {
   const response = await fetch("https://html.duckduckgo.com/html/", {
     method: "POST",
     headers: {
@@ -679,7 +680,7 @@ async function searchViaDdgHtml(query, maxResults, options) {
     },
     body: ddgSearchParams(query, options).toString(),
     redirect: "follow",
-    signal: AbortSignal.timeout(8000),
+    signal: signal || AbortSignal.timeout(6500),
   });
   if (!response.ok) throw new Error(`DuckDuckGo HTML HTTP ${response.status}`);
   const html = await response.text();
@@ -689,13 +690,13 @@ async function searchViaDdgHtml(query, maxResults, options) {
   return parseDdgHtml(html, maxResults);
 }
 
-async function searchViaDdgLite(query, maxResults, options) {
+async function searchViaDdgLite(query, maxResults, options, signal) {
   const endpoint = `https://lite.duckduckgo.com/lite/?${ddgSearchParams(query, options)}`;
   const response = await fetch(endpoint, {
     method: "GET",
     headers: { "User-Agent": SEARCH_UA, Accept: "text/html" },
     redirect: "follow",
-    signal: AbortSignal.timeout(8000),
+    signal: signal || AbortSignal.timeout(6500),
   });
   if (!response.ok) throw new Error(`DuckDuckGo Lite HTTP ${response.status}`);
   const html = await response.text();
@@ -815,6 +816,19 @@ async function sendXPost(req, res) {
   try { return res.json(await readXPost(req.body.url)); }
   catch (error) { return res.status(502).json({ error: { message: redactSecrets(error.message), code: "x_post_unavailable" }, proxy: true }); }
 }
+
+const searchX = createXSearcher();
+app.post("/api/x-search", async (req, res) => {
+  const auth = authorizeRequest(req);
+  if (!auth.ok) return sendAuthError(res, auth);
+  try { normalizeXSearch(req.body); }
+  catch (error) { return res.status(400).json({ error: { message: error.message, code: "invalid_x_query" }, proxy: true }); }
+  try {
+    return res.json(await searchX(req.body, { enabled: process.env.X_SEARCH_ENABLED === "true", bearerToken: normalizeSecret(process.env.X_BEARER_TOKEN) }));
+  } catch (error) {
+    return res.status(error.status || 502).json({ error: { message: redactSecrets(error.message), code: error.code || "x_search_failed" }, proxy: true });
+  }
+});
 
 app.post("/api/x-post", async (req, res) => {
   const auth = authorizeRequest(req);

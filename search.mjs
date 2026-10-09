@@ -129,28 +129,69 @@ export function rankSearchResults(batches, query, options, maxResults) {
   return [...first, ...rest].slice(0, maxResults).map(({ score: _score, ...result }) => result);
 }
 
-export async function runSearch(backends, query, maxResults, options) {
+export async function runSearch(backends, query, maxResults, options, policy = {}) {
   const batches = [], errors = [];
   const searchQuery = buildSearchQuery(query, options);
-  const run = async group => {
-    const outcomes = await Promise.allSettled(group.map(backend => backend.run(searchQuery, Math.min(20, maxResults * 3), options)));
-    outcomes.forEach((outcome, index) => {
-      const id = group[index].id;
-      if (outcome.status === "fulfilled") {
-        batches.push({ id, results: outcome.value });
-        if (!outcome.value.length) errors.push(`${id}: 0 results`);
-      } else errors.push(`${id}: ${outcome.reason?.message || "failed"}`);
-    });
-  };
-  await run(backends.slice(0, 2));
-  let results = rankSearchResults(batches, query, options, maxResults);
-  if (!results.length) {
-    await run(backends.slice(2));
-    results = rankSearchResults(batches, query, options, maxResults);
-  }
+  const started = performance.now(), controller = new AbortController();
+  const timings = [], timers = [];
+  let closed = false, pending = 0, primaryPending = 0, fallbackStarted = false, settling = false;
+  let deadlineReached = false, unfinished = 0;
+  await new Promise(resolve => {
+    const finish = () => {
+      if (closed) return;
+      closed = true; unfinished = pending;
+      timers.forEach(clearTimeout); controller.abort(); resolve();
+    };
+    const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+    const launchFallback = () => {
+      if (closed || fallbackStarted) return;
+      fallbackStarted = true;
+      launch(backends.slice(2), false);
+    };
+    const check = () => {
+      if (closed) return;
+      const useful = rankSearchResults(batches, query, options, maxResults).length;
+      if (useful && !settling) {
+        settling = true;
+        // Merge near-simultaneous results, without waiting for a stalled engine.
+        later(finish, policy.settleMs ?? 200);
+      }
+      if (!useful && primaryPending === 0) launchFallback();
+      if (!pending) finish();
+    };
+    const launch = (group, primary) => {
+      pending += group.length;
+      if (primary) primaryPending += group.length;
+      for (const backend of group) {
+        const at = performance.now();
+        Promise.resolve().then(() => backend.run(searchQuery, Math.min(20, maxResults * 3), options, controller.signal)).then(value => {
+          if (closed) return;
+          batches.push({ id: backend.id, results: value });
+          if (!value.length) errors.push(`${backend.id}: 0 results`);
+          timings.push({ provider: backend.id, elapsed_ms: Math.round(performance.now() - at), status: value.length ? "ok" : "empty" });
+        }, error => {
+          if (closed) return;
+          errors.push(`${backend.id}: ${error?.message || "failed"}`);
+          timings.push({ provider: backend.id, elapsed_ms: Math.round(performance.now() - at), status: "failed" });
+        }).finally(() => {
+          if (closed) return;
+          pending--; if (primary) primaryPending--;
+          check();
+        });
+      }
+    };
+    later(() => { deadlineReached = true; finish(); }, policy.deadlineMs ?? 6500);
+    later(() => { if (!settling) launchFallback(); }, policy.hedgeMs ?? 1000);
+    launch(backends.slice(0, 2), true);
+    check();
+  });
+  const results = rankSearchResults(batches, query, options, maxResults);
+  if (deadlineReached) errors.push("検索の時間上限に達しました。取得済みの結果を返します。");
   if (!batches.length) { const error = new Error("All search backends failed"); error.details = errors; throw error; }
   return {
     results, provider: batches.filter(b => b.results.length).map(b => b.id).join("+") || "none",
+    elapsed_ms: Math.round(performance.now() - started), backend_timings: timings,
+    partial: unfinished > 0, deadline_reached: deadlineReached,
     errors, search_query: searchQuery, filters: options,
     filter_notes: ["言語・地域は検索先への優先指定です。期間は検索先のインデックス基準で、公開日を保証しません。", "関連性はタイトル・抜粋・URLの語句一致による補助判定です。本文の確認にはweb_fetchを使ってください。"],
     ...(results.length ? {} : { recovery_hint: "条件に合う結果がありません。主要語を短く言い換えるか、ユーザーの必須条件を維持したまま任意の絞り込みを見直してください。" }),

@@ -91,6 +91,17 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       const safe=node.querySelector(".xPostText").textContent==="<script>untrusted</script>"&&!node.querySelector(".xPostCard script");
       node.remove();return registered&&result.ok&&safe;
     });assert.equal(xTool,true);
+    await page.route("**/api/x-search",route=>{
+      assert.equal(route.request().postDataJSON().query,"Gemini lang:ja");
+      return route.fulfill({json:{ok:true,provider:"X API v2",results:[{url:"https://x.com/example/status/123",text:"<script>search text</script>",author:{handle:"example"},created_at:"2026-10-09"}],count:1}});
+    });
+    const xSearchTool=await page.evaluate(async()=>{
+      const registered=buildTools().some(t=>t.function?.name==="x_search");
+      const result=await executeTool({function:{name:"x_search",arguments:JSON.stringify({query:"Gemini lang:ja"})}});
+      const node=renderMessage({role:"assistant",toolEvents:[{name:"x_search",ok:true,detail:{arguments:{query:"Gemini lang:ja"},result}}]});els.thread.appendChild(node);
+      const safe=node.textContent.includes("<script>search text</script>")&&!node.querySelector("script")&&Boolean(node.querySelector('a[href="https://x.com/example/status/123"]'));
+      node.remove();return registered&&result.ok&&safe;
+    });assert.equal(xSearchTool,true);
     await page.route("**/api/web-search",route=>{
       assert.deepEqual(route.request().postDataJSON().queries,["Gemini API","Gemini Free Tier"]);
       return route.fulfill({json:{ok:true,queries:["Gemini API","Gemini Free Tier"],searches:[{query:"Gemini API",ok:true,results:[{url:"https://ai.google.dev/",title:"Google"}]},{query:"Gemini Free Tier",ok:false,error:"検索失敗",results:[]}],results:[{url:"https://ai.google.dev/",title:"Google",snippet:"API"}],count:1}});
