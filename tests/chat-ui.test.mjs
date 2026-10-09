@@ -79,6 +79,17 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       const safe=node.querySelector(".xPostText").textContent==="<script>untrusted</script>"&&!node.querySelector(".xPostCard script");
       node.remove();return registered&&result.ok&&safe;
     });assert.equal(xTool,true);
+    await page.route("**/api/web-search",route=>{
+      assert.deepEqual(route.request().postDataJSON().queries,["Gemini API","Gemini Free Tier"]);
+      return route.fulfill({json:{ok:true,queries:["Gemini API","Gemini Free Tier"],searches:[{query:"Gemini API",ok:true,results:[{url:"https://ai.google.dev/",title:"Google"}]},{query:"Gemini Free Tier",ok:false,error:"検索失敗",results:[]}],results:[{url:"https://ai.google.dev/",title:"Google",snippet:"API"}],count:1}});
+    });
+    const batchTool=await page.evaluate(async()=>{
+      settings.provider="gemini";settings.model="gemini-3.8-flash";syncChips();
+      const result=await executeTool({function:{name:"web_search",arguments:JSON.stringify({queries:["Gemini API","Gemini Free Tier"]})}});
+      const node=renderMessage({role:"assistant",toolEvents:[{name:"web_search",ok:true,detail:{arguments:{queries:result.queries},result}}]});els.thread.appendChild(node);
+      const shown=node.textContent.includes("Gemini Free Tier")&&node.textContent.includes("検索失敗");node.remove();
+      return result.ok&&shown&&document.querySelector("#quickModel").value==="gemini:gemini-3.8-flash";
+    });assert.equal(batchTool,true);
     await page.evaluate(()=>{
       streamRound=async()=>new Promise((resolve,reject)=>abortController.signal.addEventListener("abort",()=>reject(new DOMException("Stopped","AbortError"))));
       els.prompt.value="停止テスト";void sendMessage();

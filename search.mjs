@@ -1,5 +1,36 @@
 // Local search policy: provider rank is retained; lexical overlap only removes
 // obvious mismatches. It is not semantic verification of the page's contents.
+export function normalizeSearchQueries(body = {}) {
+  if (body.query !== undefined && body.queries !== undefined) throw new Error("queryとqueriesはどちらか一方を指定してください。");
+  const values = body.queries === undefined ? [body.query] : body.queries;
+  if (!Array.isArray(values) || !values.length || values.length > 6 || values.some(q => typeof q !== "string" || !q.trim() || q.length > 500)) throw new Error("query（1〜500文字）またはqueries（最大6件の検索語）を指定してください。");
+  return [...new Set(values.map(q => q.trim()))];
+}
+
+export async function runSearchBatch(queries, search, concurrency = 3) {
+  const searches = new Array(queries.length); let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, queries.length) }, async () => {
+    for (;;) {
+      const index = cursor++; if (index >= queries.length) return;
+      const query = queries[index];
+      try { const { errors = [], ...result } = await search(query); searches[index] = { query, ok: true, ...result, warnings: errors }; }
+      catch { searches[index] = { query, ok: false, results: [], error: "検索先で失敗しました。このクエリだけ修正・再試行してください。" }; }
+    }
+  }));
+  const merged = new Map();
+  for (const item of searches) for (const result of item.results) {
+    const key = canonicalSearchUrl(result.url); if (!key) continue;
+    if (merged.has(key)) merged.get(key).matched_queries.push(item.query);
+    else merged.set(key, { ...result, matched_queries: [item.query] });
+  }
+  const results = [...merged.values()];
+  // Snippets live once in the merged list, instead of duplicating large tool data.
+  const summaries = searches.map(({ results, ...rest }) => ({ ...rest, results: results.map(({ url, title }) => ({ url, title })) }));
+  return { ok: searches.some(s => s.ok), queries, searches: summaries, results, count: results.length,
+    warnings: searches.flatMap(s => s.warnings || [s.error]).filter(Boolean),
+    ...(searches.some(s => !s.ok || !s.results.length) ? { recovery_hint: "成功したクエリの結果を利用し、失敗・0件のクエリだけ修正して再検索してください。" } : {}) };
+}
+
 export function normalizeSearchOptions(body = {}, query = "") {
   const list = (key, validate = () => true) => {
     if (body[key] === undefined) return [];

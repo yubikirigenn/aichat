@@ -10,7 +10,8 @@ Render からそのまま公開できる、画像入力とワークスペース�
         ↓
       Render の server.mjs（許可リストで選択モデルを検証）
         ├─ Render環境変数の GROQ_API_KEY → Groq
-        ├─ Render環境変数の EXPERIENTIAL_LABS_API_KEY → Experiential Labs
+        ├─ Render環境変数の GEMINI_API_KEY → Gemini（Free Tier確認後）
+        ├─ Experiential Labs → 課金安全性の確認中、送信停止
         └─ Render環境変数の OPENROUTER_API_KEY → OpenRouter
 ```
 
@@ -18,7 +19,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 
 ## 主な機能
 
-- Groq / Experiential Labs / OpenRouter のプロバイダ選択
+- Gemini / Groq / OpenRouter のプロバイダ選択（XPLは送信停止中）
 - 2026-10-09時点で確認した無料プラン・無料オファー・無料モデルの登録
 - モデル選択を「画像対応」「画像非対応」に分離
 - クリップボード画像の貼り付け、画像ファイル添付、画像プレビュー
@@ -34,7 +35,8 @@ Render からそのまま公開できる、画像入力とワークスペース�
   - [FxEmbedの公開API](https://github.com/FxEmbed/FxEmbed/wiki/Status-Fetch-API)をRenderから利用。XのAPIキー・ログインは不要ですが、投稿IDがこの第三者サービスに送られます
   - 非公開・削除・取得制限には対応せず、スレッド全体や返信一覧は取得しません。画像・動画の内容解析は行いません。取得元の停止や制限で利用できない場合があります
   - 成功結果は最大200件・60秒キャッシュ。一時的な取得障害は1回再試行します
-- OpenRouter 以外（Groq / Experiential Labs）でも使える汎用 Web検索
+- Gemini / Groq / OpenRouterで使える汎用 Web検索
+  - `web_search` は単一の `query` に加え `queries`（最大6件）に対応。最大3クエリを並列実行し、各クエリの成功・失敗・0件を区別して返します。共通フィルターを適用し、結果URLを重複排除します
   - `/api/web-search`（Bing / DuckDuckGoを並列取得、必要時にLiteへフォールバック）と `/api/web-fetch` をサーバで実行
   - モデルからは `web_search` / `web_fetch` Function Tool として公開
 - 検索の詳細絞り込み（OpenRouterでもFunction Toolとして利用可能）
@@ -47,7 +49,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
 - チャット履歴、ダークモード、JSON エクスポート
 
-Experiential Labsは、2026-10-09の公開プロモーションデータと個別ページで無料チャット枠を確認した `qwen3.8-flash-next-uncensored` を登録しています（時間・日次上限あり、画像非対応）。有料プラン限定の100%割引は無料枠と区別し、Clef / Clef Flash / GPT-6 Luna Decisions / Jevなど非チャットAPIは除外しています。過去の日次無料枠は現在の提供経路に無料枠がなく、公開プロモーションデータにもないため外しています。XPL側でCredits overflowが有効な場合は上限後に課金される可能性があるため、無料利用では無効にしてください。公式の一覧・個別ページ・請求ガイドの表示に差異があるため、利用時にもアカウントの適用条件をご確認ください。
+Experiential Labsの `qwen3.8-flash-next-uncensored` は、2026-10-09の公開データに無料プロモーション表示と従量料金（入力$0.15/M・出力$0.47/M）が併存しています。無料表示だけではアカウントの適用条件・Waterfall・Credits overflowを保証できず、課金の報告があるため、このアプリからのXPL送信を停止しています（診断の生成も停止）。以前の「FREE promo」表示は撤回しました。実際の請求原因はXPLの利用履歴で、クレジット消費・BYOK請求・適用プロモーション・ルーティングを確認してください。既存の請求の取り消しはできません。参照: [公開モデルデータ](https://api.experientiallabs.ai/api/models/qwen3.8-flash-next-uncensored) / [請求仕様](https://platform.experientiallabs.ai/docs/billing)。
 
 OpenRouterは、Models APIで入力・出力料金がともに$0のチャットモデルを登録し、画像入力の有無をモデルごとに反映しています（音楽生成は除外）。無料提供に期限があるモデルは選択欄にも期限を表示します。Groqは公式Free Plan Limitsに掲載されたチャット対応モデルを登録しています。
 
@@ -55,12 +57,16 @@ OpenRouterは、Models APIで入力・出力料金がともに$0のチャット�
 
 ## Render への設定
 
+Geminiは[Google公式料金表](https://ai.google.dev/gemini-api/docs/pricing)で無料入力・出力のあるチャットモデルを登録し、[OpenAI互換API](https://ai.google.dev/gemini-api/docs/openai)へ接続します。画像入力・Function Tool・ストリーミングに対応。検索はこのアプリのFunction Toolを使用し、Googleの有料Groundingには切り替えません。Google AI Studioで**Free Tier**のプロジェクトを選び、そのキーを使用してください。有料Tierでは同じモデルでも課金されます。確認後のみ `GEMINI_FREE_TIER_CONFIRMED=true` を設定してください。この値は管理者の確認記録であって、Googleの課金状態を自動検証したり無料利用を強制するものではありません。無料枠にはレート・日次制限とデータ利用条件があり、上限時に別の有料モデルへ自動切替しません。
+
 1. GitHub でこのリポジトリを Render に接続します。
 2. Environment Variables に設定します。
    - `APP_ACCESS_PASSWORD`: アプリに入力するアクセスパスワード
    - `OPENROUTER_API_KEY`: OpenRouterを使う場合のAPIキー
    - `GROQ_API_KEY`: Groqを使う場合のAPIキー
-   - `EXPERIENTIAL_LABS_API_KEY`: Experiential Labsを使う場合のAPIキー
+   - `GEMINI_API_KEY`: Google AI StudioのFree TierプロジェクトのAPIキー
+   - `GEMINI_FREE_TIER_CONFIRMED`: 上記を確認した場合のみ`true`（既定`false`）
+   - `EXPERIENTIAL_LABS_API_KEY`: 現在は送信停止のため使用しません
    - `PUBLIC_APP_URL`: 任意。OpenRouterの`HTTP-Referer`用
 3. Build Command は `npm ci`、Start Command は `npm start` のままにします。
 4. 任意で `PUBLIC_APP_URL` に Render の URL を設定します。
@@ -79,6 +85,6 @@ npm install
 APP_ACCESS_PASSWORD='十分に長いパスワード' OPENROUTER_API_KEY=sk-or-v1-... npm start
 ```
 
-他のプロバイダを使う場合は、必要な `GROQ_API_KEY`、`EXPERIENTIAL_LABS_API_KEY` も同じように設定します。
+Groqには `GROQ_API_KEY`、Geminiには `GEMINI_API_KEY` と確認済みの `GEMINI_FREE_TIER_CONFIRMED=true` を設定します。XPLへの送信は停止中です。
 
 ブラウザで `http://localhost:3000` を開き、設定画面からアクセスパスワードを入力します。パスワードは「このブラウザにアクセスパスワードを保存」をONにした場合だけローカル保存されます。

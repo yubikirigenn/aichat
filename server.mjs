@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
-import { normalizeSearchOptions, runSearch } from "./search.mjs";
+import { normalizeSearchOptions, runSearch, normalizeSearchQueries, runSearchBatch } from "./search.mjs";
 import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
 import {
   DEFAULT_MODEL,
@@ -79,6 +79,8 @@ function requestedModel(body = {}) {
 function providerAccess(providerId) {
   const provider = providerFor(providerId);
   if (!provider) return { ok: false, reason: "unknown_provider" };
+  if (providerId === "experientiallabs") return { ok: false, reason: "billing_safety", provider };
+  if (providerId === "gemini" && process.env.GEMINI_FREE_TIER_CONFIRMED !== "true") return { ok: false, reason: "free_tier_unconfirmed", provider };
   const apiKey = normalizeApiKey(process.env[provider.keyEnv]);
   if (!apiKey) return { ok: false, reason: "provider_configuration", provider };
   return { ok: true, provider, apiKey };
@@ -113,6 +115,8 @@ function parseErrorBody(text, status, providerLabel = "OpenRouter") {
 }
 
 function authFailureMessage(reason, provider = null) {
+  if (reason === "billing_safety") return "XPLの無料適用を保証できず課金報告があるため、このアプリからの送信を停止しています。XPLの利用履歴・Credits overflow・Waterfallを確認してください。";
+  if (reason === "free_tier_unconfirmed") return "GeminiはFree Tierプロジェクトのキーを使用してください。Google AI Studioで確認後、RenderでGEMINI_FREE_TIER_CONFIRMED=trueを設定してください。有料キーを無料へ変更する機能ではありません。";
   if (reason === "server_configuration") {
     return "Renderに APP_ACCESS_PASSWORD と、利用するプロバイダのAPIキーを設定してください。";
   }
@@ -129,7 +133,7 @@ function authFailureMessage(reason, provider = null) {
 }
 
 function sendAuthError(res, auth) {
-  const serverConfiguration = ["server_configuration", "provider_configuration", "unknown_provider"].includes(auth.reason);
+  const serverConfiguration = ["server_configuration", "provider_configuration", "unknown_provider", "billing_safety", "free_tier_unconfirmed"].includes(auth.reason);
   return res.status(serverConfiguration ? 503 : 401).json({
     error: {
       message: authFailureMessage(auth.reason, auth.provider),
@@ -156,8 +160,20 @@ function adaptProviderBody(provider, body, model = null) {
     const enabled = adapted.reasoning.enabled !== false;
     delete adapted.reasoning;
     if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
+    else if (provider.id === "gemini" && /^gemini-2\.5-(?:flash|flash-lite)$/.test(adapted.model)) adapted.reasoning_effort = "none";
   }
   if (!supportsTemperature) delete adapted.temperature;
+  if (provider.id === "gemini") {
+    delete adapted.reasoning; delete adapted.plugins;
+    delete adapted.service_tier;
+    adapted.messages = (adapted.messages || []).map(message => {
+      const { reasoning: _reasoning, reasoning_details: _details, ...rest } = message;
+      return rest;
+    });
+    // Thought summaries use Google's documented OpenAI-compatible extension.
+    adapted.extra_body = { google: { thinking_config: { include_thoughts: true } } };
+    if (body.reasoning?.enabled === false) delete adapted.extra_body;
+  }
 
   // OpenRouter Server Tools only work on OpenRouter. Strip them elsewhere so
   // upstream APIs do not reject the tools array.
@@ -166,7 +182,7 @@ function adaptProviderBody(provider, body, model = null) {
       (tool) => !(tool && typeof tool === "object" && typeof tool.type === "string" && tool.type.startsWith("openrouter:")),
     );
     if (!adapted.tools.length) delete adapted.tools;
-    delete adapted.tool_choice;
+    if (!adapted.tools?.length) delete adapted.tool_choice;
   }
 
   return adapted;
@@ -741,13 +757,15 @@ app.post("/api/web-search", async (req, res) => {
   const auth = authorizeRequest(req);
   if (!auth.ok) return sendAuthError(res, auth);
 
-  const query = String(req.body?.query || "").trim();
-  if (!query || query.length > 500) {
+  let queries;
+  try { queries = normalizeSearchQueries(req.body); }
+  catch (error) {
     return res.status(400).json({
-      error: { message: "queryは1〜500文字で指定してください。", code: "invalid_query" },
+      error: { message: error.message, code: "invalid_query" },
       proxy: true,
     });
   }
+  const query = queries[0];
   const maxResults = Math.floor(Math.min(Math.max(Number(req.body?.max_results) || 5, 1), 10));
   let options;
   try { options = normalizeSearchOptions(req.body, query); }
@@ -756,6 +774,10 @@ app.post("/api/web-search", async (req, res) => {
   }
 
   try {
+    if (req.body.queries !== undefined) {
+      const result = await runSearchBatch(queries, q => runSearch(SEARCH_BACKENDS, q, maxResults, normalizeSearchOptions(req.body, q)));
+      return res.json({ ...result, warnings: result.warnings.map(redactSecrets), retrieved_at: new Date().toISOString() });
+    }
     const { results, provider, errors, ...metadata } = await runSearch(SEARCH_BACKENDS, query, maxResults, options);
     return res.json({
       ok: true,

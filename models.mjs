@@ -1,9 +1,17 @@
 // Curated snapshot checked on 2026-10-09 (JST).
-// "Free" means a current zero-priced promotion/tier or OpenRouter zero-priced endpoint.
+// Free-tier models still require an eligible account. XPL is retained only as a
+// suspended selection; its promotional badge is not proof of zero billing.
 // Availability and rate limits can change; the server still validates every
 // provider/model pair against this allowlist before forwarding a request.
 
 export const PROVIDERS = Object.freeze({
+  gemini: Object.freeze({
+    id: "gemini", label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    keyEnv: "GEMINI_API_KEY", supportsReasoning: true,
+    reasoningParameter: "reasoning_effort", defaultReasoningEffort: "low",
+    freeLabel: "Free Tier専用キー要", docsUrl: "https://ai.google.dev/gemini-api/docs/pricing",
+  }),
   groq: Object.freeze({
     id: "groq",
     label: "Groq",
@@ -21,7 +29,7 @@ export const PROVIDERS = Object.freeze({
     supportsReasoning: true,
     reasoningParameter: "reasoning_effort",
     defaultReasoningEffort: "medium",
-    freeLabel: "FREE",
+    freeLabel: "課金確認中・停止",
     docsUrl: "https://platform.experientiallabs.ai/models",
   }),
   openrouter: Object.freeze({
@@ -51,10 +59,9 @@ function model(provider, id, name, options = {}) {
   });
 }
 
-// Active public free promotions, checked on 2026-10-09 (JST).
-// Paid-plan discounts and non-chat decision APIs are excluded.
-// Older daily tiers are not present in current model routes/promotion data.
-const EXPERIENTIAL_FREE_MODELS = Object.freeze([
+// Retain the saved selection for a clear billing warning, but the server blocks
+// XPL requests until account-specific free billing can be verified safely.
+const EXPERIENTIAL_SUSPENDED_MODELS = Object.freeze([
   {
     id: "qwen3.8-flash-next-uncensored",
     name: "Qwen3.8 Flash Next Uncensored",
@@ -62,12 +69,12 @@ const EXPERIENTIAL_FREE_MODELS = Object.freeze([
     supportsTools: true,
     supportsReasoning: true,
     supportsTemperature: true,
-    freeLabel: "FREE promo",
-    note: "無料プロモーション。時間・日次上限あり。画像非対応。上限後の課金はXPLのCredits overflow設定によります。",
+    freeLabel: "課金確認中・停止",
+    note: "無料表示と従量料金が併存し課金報告あり。無料適用を保証できないため、このアプリからXPLへの送信は停止中。",
   },
 ]);
 
-const EXPERIENTIAL_MODEL_CATALOG = EXPERIENTIAL_FREE_MODELS.map(
+const EXPERIENTIAL_MODEL_CATALOG = EXPERIENTIAL_SUSPENDED_MODELS.map(
   ({ id, name, ...options }) => model("experientiallabs", id, name, options),
 );
 
@@ -109,13 +116,17 @@ const OPENROUTER_MODEL_CATALOG = OPENROUTER_FREE_MODELS.map(
 );
 
 export const MODEL_CATALOG = Object.freeze([
+  ...["3.8-flash", "3.7-flash", "3.6-flash", "3.5-flash", "3.5-flash-lite", "3.1-flash-lite", "2.5-pro", "2.5-flash", "2.5-flash-lite"].map(version =>
+    model("gemini", `gemini-${version}`, `Gemini ${version.replace(/-/g, " ")}`, {
+      vision: true, note: "Google AI StudioでFree Tierのプロジェクトのキーを使用。有料プロジェクトのキーでは課金されます。無料枠の入力は製品改善に利用される場合があります。",
+    })),
   // Groq Free Plan Limits: chat-capable models from the current catalog.
   model("groq", "openai/gpt-oss-120b", "GPT OSS 120B"),
   model("groq", "openai/gpt-oss-20b", "GPT OSS 20B"),
   model("groq", "openai/gpt-oss-safeguard-20b", "GPT OSS Safeguard 20B", { supportsTools: false }),
   model("groq", "qwen/qwen3.8-27b", "Qwen3.8 27B", { vision: true }),
 
-  // Experiential Labs active free chat promotion.
+  // Suspended Experiential Labs selection (not an assertion of free billing).
   ...EXPERIENTIAL_MODEL_CATALOG,
 
   // OpenRouter zero-priced text-generation endpoints checked on 2026-10-09.

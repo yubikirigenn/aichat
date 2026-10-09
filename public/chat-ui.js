@@ -86,11 +86,12 @@ function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
     const state=activity?.status||(event?.ok===false?"failed":"done");row.node.dataset.state=state;
     row.glyph.textContent=state==="failed"?"!":state==="running"||state==="requested"?"◌":"✓";
     const args=event?.detail?.arguments||{};
-    const destination=args.path||args.query||args.url||activityDetailText(activity||{})||"";
+    const destination=args.path||args.query||(Array.isArray(args.queries)?args.queries.join(" / "):"")||args.url||activityDetailText(activity||{})||"";
     row.label.textContent=item.kind==="plan"?"計画":`${activity?activityCopy(activity.name,state):friendlyToolName(event?.name||"Tool")}${destination?` · ${destination}`:""}`;
     let html="";
     if(event){
       const result=toolEventResult(event);
+      if(result?.searches)html+=result.searches.map(search=>`<div>${escapeHTML(search.query)} · ${search.ok?`${search.results.length}件`:escapeHTML(search.error||"失敗")}</div>`).join("");
       if(result?.post){
         const post=result.post;
         html+=`<div class="xPostCard"><a href="${escapeHTML(safeResultUrl(post.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(post.author?.name||"")} @${escapeHTML(post.author?.handle||"")}</a><div class="xPostDate">${escapeHTML(post.created_at||"")}</div><div class="xPostText">${escapeHTML(post.text||"")}</div>`;
@@ -102,7 +103,7 @@ function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
       if(event.name?.startsWith("plan_")&&msg.planSnapshot)html+=renderPlanCard(msg.planSnapshot);
       if(args.path)html+=`<button type="button" class="artifactLink" data-open-artifact="${escapeHTML(args.path)}">${escapeHTML(args.path)}</button>`;
       html+=`<details><summary>実行データ</summary><pre>${escapeHTML(JSON.stringify(event.detail||{},null,2).slice(0,12000))}</pre></details>`;
-      if(result?.results?.length)html=result.results.map(r=>`<p><a href="${escapeHTML(safeResultUrl(r.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(r.title||r.url)}</a><br>${escapeHTML(r.snippet||"")}</p>`).join("")+html;
+      if(result?.results?.length)html+=result.results.map(r=>`<p><a href="${escapeHTML(safeResultUrl(r.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(r.title||r.url)}</a><br>${escapeHTML(r.snippet||"")}</p>`).join("");
       if(result?.chart&&!row.autoOpened){row.node.open=true;row.autoOpened=true}
     }else if(item.kind==="plan")html=renderPlanCard(msg.planSnapshot);
     else html=`<div>${escapeHTML(activity?.detail||"実行中")}</div>`;
