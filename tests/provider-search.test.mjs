@@ -71,3 +71,62 @@ test("Gemini streaming tool signatures survive fragmented arguments", async()=>{
   assert.equal(result.msg.tool_calls[0].extra_content.google.thought_signature,"signed");
   assert.deepEqual(JSON.parse(result.msg.tool_calls[0].function.arguments),{queries:["a","b"]});
 });
+
+async function streamTools(deltas,onUpdate){
+  const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+  const source=html.slice(html.indexOf("async function performStreamRequest("),html.indexOf("async function retryWithClientWebTools("));
+  const chunks=deltas.map(tool_calls=>({choices:[{delta:{tool_calls}}]}));
+  const request=runInNewContext(source+";performStreamRequest",{
+    getApiKey:()=>"test",API_URL:"/api/chat",proxyHeaders:()=>({}),abortController:new AbortController(),TextDecoder,
+    fetch:async()=>new Response(chunks.map(c=>"data: "+JSON.stringify(c)+"\n\n").join("")+"data: [DONE]\n\n")
+  });
+  return (await request({},onUpdate)).msg.tool_calls;
+}
+
+test("unindexed Gemini calls stay separate and retain their IDs and signatures",async()=>{
+  const snapshots=[];
+  const calls=await streamTools([
+    [{id:"time",function:{name:"current_datetime",arguments:"{}"},extra_content:{google:{thought_signature:"time-sig"}}}],
+    [{id:"search",function:{name:"web_search",arguments:'{"query":'},extra_content:{google:{thought_signature:"search-sig"}}}],
+    [{id:"search",function:{name:"web_search",arguments:'"Gemini"}'}}],
+  ],msg=>snapshots.push(JSON.parse(JSON.stringify(msg))));
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].id,"time");assert.equal(calls[0].function.name,"current_datetime");
+  assert.deepEqual(JSON.parse(calls[0].function.arguments),{});
+  assert.equal(calls[1].id,"search");assert.equal(calls[1].function.name,"web_search");
+  assert.deepEqual(JSON.parse(calls[1].function.arguments),{query:"Gemini"});
+  assert.equal(calls[0].extra_content.google.thought_signature,"time-sig");
+  assert.equal(calls[1].extra_content.google.thought_signature,"search-sig");
+  assert.equal(snapshots[0].tool_calls.length,1);
+  assert.equal(snapshots[1].tool_calls[1].function.arguments,'{"query":');
+});
+
+test("parallel indexed calls support interleaved fragments and split names",async()=>{
+  const calls=await streamTools([
+    [{index:0,id:"a",function:{name:"web_",arguments:'{"query":'}},{index:1,id:"b",function:{name:"current_datetime",arguments:"{"}}],
+    [{index:1,function:{arguments:"}"}},{index:0,function:{name:"search",arguments:'"Gemini"}'}}],
+  ]);
+  assert.equal(calls.length,2);assert.equal(calls[0].function.name,"web_search");
+  assert.deepEqual(JSON.parse(calls[0].function.arguments),{query:"Gemini"});
+  assert.deepEqual(JSON.parse(calls[1].function.arguments),{});
+});
+
+test("distinct IDs never merge even when the upstream reuses index zero",async()=>{
+  const calls=await streamTools([
+    [{index:0,id:"a",function:{name:"current_datetime",arguments:"{}"}}],
+    [{index:0,id:"b",function:{name:"web_search",arguments:'{"query":'}}],
+    [{index:0,function:{arguments:'"Gemini"}'}}],
+  ]);
+  assert.equal(calls.length,2);assert.equal(calls[0].function.name,"current_datetime");
+  assert.equal(calls[1].function.name,"web_search");
+  assert.deepEqual(JSON.parse(calls[1].function.arguments),{query:"Gemini"});
+});
+
+test("anonymous continuation is accepted only when there is one possible call",async()=>{
+  const calls=await streamTools([[{id:"a",function:{name:"web_search",arguments:'{"query":'}}],[{function:{arguments:'"Gemini"}'}}]]);
+  assert.deepEqual(JSON.parse(calls[0].function.arguments),{query:"Gemini"});
+  await assert.rejects(streamTools([
+    [{id:"a",function:{name:"current_datetime",arguments:"{}"}},{id:"b",function:{name:"web_search",arguments:'{"query":'}}],
+    [{function:{arguments:'"Gemini"}'}}],
+  ]),/ID・index/);
+});

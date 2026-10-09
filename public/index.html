@@ -1626,6 +1626,8 @@ async function performStreamRequest(body,onUpdate){
 
   const reader=res.body.getReader(),dec=new TextDecoder();let buf="";
   const msg={role:"assistant",content:"",reasoning:"",reasoning_details:[],annotations:[],tool_calls:[]};
+  // Some compatible APIs omit (or reuse) index. Never merge distinct call IDs.
+  const toolById=new Map(),toolByIndex=new Map();
   let usage=null,finish=null;
 
   while(true){
@@ -1664,12 +1666,24 @@ async function performStreamRequest(body,onUpdate){
 
       if(Array.isArray(d.tool_calls)){
         for(const p of d.tool_calls){
-          const i=p.index??0;
-          if(!msg.tool_calls[i])msg.tool_calls[i]={id:"",type:"function",function:{name:"",arguments:""}};
-          const t=msg.tool_calls[i];
+          const hasIndex=Number.isInteger(p.index)&&p.index>=0;
+          let t=p.id?toolById.get(p.id):undefined;
+          const indexed=hasIndex?toolByIndex.get(p.index):undefined;
+          if(!t&&indexed&&(!p.id||!indexed.id||indexed.id===p.id))t=indexed;
+          if(!t&&!p.id&&!hasIndex){
+            if(msg.tool_calls.length===1)t=msg.tool_calls[0];
+            else throw new Error("ツール応答のID・indexがなく、複数の呼び出しを区別できません。混在を防ぐため生成を停止しました。");
+          }
+          if(!t){
+            t={id:"",type:"function",function:{name:"",arguments:""}};
+            msg.tool_calls.push(t);
+          }
+          if(p.id)toolById.set(p.id,t);
+          if(hasIndex)toolByIndex.set(p.index,t);
           if(p.id)t.id=p.id;
           if(p.type)t.type=p.type;
-          if(p.function?.name)t.function.name+=p.function.name;
+          // APIs may repeat a complete name on each arguments fragment.
+          if(p.function?.name&&p.function.name!==t.function.name)t.function.name+=p.function.name;
           if(p.function?.arguments)t.function.arguments+=p.function.arguments;
           if(p.extra_content)t.extra_content=p.extra_content;
         }
