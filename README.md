@@ -65,6 +65,10 @@ OpenRouterは、Models APIで入力・出力料金がともに$0のチャット�
 
 ## ローカル起動
 
+会話画面は `public/chat-ui.css` / `public/chat-ui.js` に分離しています。途中説明・Thinking・Tool操作は時系列で表示し、生成中も展開状態と閲覧位置を維持します。上へスクロールすると追従を止め、「最新へ戻る」で追従を再開できます。モデル・ツール設定・停止は入力欄から操作できます。
+
+`npm run check` と `npm test` で構文・回帰テストを実行できます。Playwrightが利用できる環境では `CHAT_UI_BROWSER=1 node --test tests/chat-ui.test.mjs` で画面操作も検証できます（必要に応じて `PLAYWRIGHT_MODULE` と `CHROME_PATH` を指定）。画面テストのモデル応答はモックで、実際のプロバイダ通信は行いません。
+
 ```bash
 npm install
 APP_ACCESS_PASSWORD='十分に長いパスワード' OPENROUTER_API_KEY=sk-or-v1-... npm start

@@ -198,6 +198,7 @@ html,body{background:var(--bg);color:var(--text)}
 @media(max-width:760px){.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{border-left:0}.topbar{height:58px;padding:0 10px}.topBtn{padding:0 8px}.chatScroll{padding:22px 12px 165px}.composerWrap{padding:36px 10px max(10px,env(safe-area-inset-bottom))}.playBody{grid-template-columns:118px minmax(0,1fr)}.row2{grid-template-columns:1fr}.message{grid-template-columns:27px minmax(0,1fr);gap:8px}.avatar{width:27px;height:27px}.bubble{font-size:13.5px}}
 @media(hover:none){.messageActions{height:auto;margin-top:5px;opacity:1;pointer-events:auto}}
 </style>
+<link rel="stylesheet" href="/chat-ui.css">
 </head>
 <body>
 <div class="app">
@@ -260,11 +261,19 @@ html,body{background:var(--bg);color:var(--text)}
                 <button class="cBtn" id="openPlayBtn" title="Playgroundを開く" aria-label="Playgroundを開く">⌘</button>
                 <button class="cBtn" id="attachBtn" title="ファイルを添付" aria-label="ファイルを添付">＋</button>
                 <button class="cBtn" id="imageBtn" title="画像を追加" aria-label="画像を追加">▧</button>
+                <select class="quickModel" id="quickModel" aria-label="モデルを選択"></select>
+                <details class="composerTools" id="composerTools"><summary>ツール</summary><div class="quickToolsPanel">
+                  <label><input type="checkbox" id="quickReasoning">Thinking</label>
+                  <label><input type="checkbox" id="quickWeb">Web検索</label>
+                  <label>Planner<select id="quickPlanner"><option value="auto">Auto</option><option value="always">Always</option><option value="off">Off</option></select></label>
+                </div></details>
               </div>
+              <button type="button" class="stopBtn" id="stopBtn" aria-label="生成を停止" title="生成を停止" hidden>■</button>
               <button class="sendBtn" id="sendBtn" title="送信">↑</button>
             </div>
           </div>
         </div>
+        <button type="button" class="jumpLatest" id="jumpLatest" hidden>↓ 最新へ戻る</button>
       </section>
 
       <aside class="playground" id="playground">
@@ -276,6 +285,7 @@ html,body{background:var(--bg);color:var(--text)}
             <button class="playTab" data-tab="tools">Tools</button>
             <button class="playTab" data-tab="preview">Preview</button>
           </div>
+          <button type="button" class="closePlay" id="closePlayBtn" aria-label="Playgroundを閉じてチャットへ戻る">閉じる</button>
         </div>
 
         <div class="fileToolbar" id="fileToolbar">
@@ -391,6 +401,7 @@ html,body{background:var(--bg);color:var(--text)}
 
 <div class="toastHost" id="toastHost"></div>
 
+<script src="/chat-ui.js"></script>
 <script>
 "use strict";
 
@@ -468,6 +479,7 @@ let pendingImages = [];
 let editingMessageIndex = null;
 let editDraftBackup = null;
 let chatAutoFollow = true;
+let lastChatScrollTop = 0;
 let scrollBottomFrame = 0;
 const CHAT_BOTTOM_THRESHOLD = 112;
 const THINKING_BOTTOM_THRESHOLD = 24;
@@ -534,7 +546,10 @@ function chatDistanceFromBottom(){
   return Math.max(0,els.chatScroll.scrollHeight-els.chatScroll.scrollTop-els.chatScroll.clientHeight);
 }
 function syncChatAutoFollow(){
-  chatAutoFollow=chatDistanceFromBottom()<=CHAT_BOTTOM_THRESHOLD;
+  const distance=chatDistanceFromBottom(),top=els.chatScroll.scrollTop;
+  chatAutoFollow=distance<=2||(top>=lastChatScrollTop&&distance<=CHAT_BOTTOM_THRESHOLD);
+  lastChatScrollTop=top;
+  updateLatestButton();
   if(!chatAutoFollow&&scrollBottomFrame){
     cancelAnimationFrame(scrollBottomFrame);
     scrollBottomFrame=0;
@@ -548,6 +563,8 @@ function scrollBottom({force=false}={}){
     scrollBottomFrame=0;
     if(!force&&!chatAutoFollow)return;
     els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+    lastChatScrollTop=els.chatScroll.scrollTop;
+    updateLatestButton();
   });
 }
 function restoreChatScroll(scrollTop){
@@ -692,6 +709,7 @@ function syncChips(){
   els.webChip.style.display = settings.web ? "" : "none";
   els.planChip.textContent = "Planner: " + (settings.planner==="auto"?"Auto":settings.planner==="always"?"Always":"Off");
   renderModelControls();
+  syncQuickControls();
 }
 async function loadModelCatalog(){
   try{
@@ -758,6 +776,7 @@ function createChat(){
   chats.unshift(c);activeChatId=c.id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();return c;
 }
 function deleteChat(id){
+  if(running&&id===activeChatId){toast("生成を停止してからチャットを削除してください");return}
   if(editingMessageIndex!==null&&id===activeChatId){toast("編集中のメッセージを保存するかキャンセルしてください");return}
   chats=chats.filter(c=>c.id!==id);
   if(activeChatId===id) activeChatId=chats[0]?.id||null;
@@ -969,7 +988,7 @@ function renderActivityHTML(activity=[]){
 function upsertActivity(msg,id,name,status,detail=""){
   msg.activity=msg.activity||[];
   let a=msg.activity.find(x=>x.id===id);
-  if(!a){a={id,name,status,detail,at:nowISO()};msg.activity.push(a)}
+  if(!a){a={id,name,status,detail,at:nowISO()};msg.activity.push(a);if(msg.timeline)msg.timeline.push({id,kind:"activity"})}
   else{if(name)a.name=name;if(status)a.status=status;if(detail!==undefined)a.detail=detail}
   return a;
 }
@@ -1071,36 +1090,9 @@ function renderMessage(m,messageIndex=null){
   const av=document.createElement("div");av.className="avatar";av.textContent=m.role==="user"?"You":"N";
   const b=document.createElement("div");b.className="bubble";
   if(m.role==="assistant"){
-    if(m.activity?.length){const a=document.createElement("div");a.innerHTML=renderActivityHTML(m.activity);b.append(...a.children)}
-    const r=getReasoningText(m);
-    if(r){
-      const d=makeThinkingDetails(m,{streaming:false});
-      if(d)b.appendChild(d);
-    }
-    if(m.planSnapshot){const tmp=document.createElement("div");tmp.innerHTML=renderPlanCard(m.planSnapshot);b.append(...tmp.children)}
-    if(m.toolEvents?.length){const te=document.createElement("div");te.innerHTML=renderToolEventsHTML(m.toolEvents);b.append(...te.children)}
-    if(m.content){const body=document.createElement("div");body.innerHTML=markdown(m.content);b.appendChild(body)}
-    const anns=(m.annotations||[]).filter(a=>a?.url_citation?.url);
-    if(anns.length){
-      const src=document.createElement("div");src.className="sources";
-      const seen=new Set();
-      for(const a of anns){
-        const u=a.url_citation.url;if(seen.has(u))continue;seen.add(u);
-        const x=document.createElement("a");x.className="sourceChip";x.href=u;x.target="_blank";x.rel="noopener";
-        x.textContent=a.url_citation.title||new URL(u).hostname;src.appendChild(x);
-      }
-      b.appendChild(src);
-    }
-    if(m.meta){
-      const meta=document.createElement("div");meta.className="meta";
-      if(m.meta.tokens!=null)meta.innerHTML+=`<span class="pill">${Number(m.meta.tokens).toLocaleString()} output tok</span>`;
-      if(m.meta.cost!=null)meta.innerHTML+=`<span class="pill">$${Number(m.meta.cost).toFixed(6)}</span>`;
-      if(m.meta.rounds)meta.innerHTML+=`<span class="pill">${m.meta.rounds} round</span>`;
-      if(m.meta.ms)meta.innerHTML+=`<span class="pill">${(m.meta.ms/1000).toFixed(1)}s</span>`;
-      if(m.meta.webFallback)meta.innerHTML+=`<span class="pill">Web fallback</span>`;
-      b.appendChild(meta);
-    }
-    if(m.error){const e=document.createElement("div");e.className="errorCard";e.textContent=m.error;b.appendChild(e)}
+    wrap.append(av,b);
+    renderTurnView(wrap,m,{streaming:!!m._streaming,messageIndex});
+    return wrap;
   }else{
     appendChatImages(b,m.images);
     if(m.content){const body=document.createElement("div");body.textContent=m.content;b.appendChild(body)}
@@ -1143,25 +1135,10 @@ function flushStreamingAssistantRender(target,msg){
 }
 function renderStreamingAssistant(target,msg){
   const previousScrollTop=els.chatScroll.scrollTop;
-  const preserveScroll=!chatAutoFollow;
-  const existingThinking=target.querySelector(".thinking");
-  if(existingThinking)msg.thinkingOpen=existingThinking.open;
-  const thinkingState=thinkingViewportState(target);
-  const b=target.querySelector(".bubble");b.innerHTML="";
-  if(msg.activity?.length){const a=document.createElement("div");a.innerHTML=renderActivityHTML(msg.activity);b.append(...a.children)}
-  const r=getReasoningText(msg);
-  if(r){
-    if(msg.thinkingOpen===undefined)msg.thinkingOpen=true;
-    const d=makeThinkingDetails(msg,{streaming:true});
-    if(d)b.appendChild(d);
-  }
-  restoreThinkingViewport(target,thinkingState);
-  if(msg.planSnapshot){const x=document.createElement("div");x.innerHTML=renderPlanCard(msg.planSnapshot);b.append(...x.children)}
-  if(msg.toolEvents?.length){const te=document.createElement("div");te.innerHTML=renderToolEventsHTML(msg.toolEvents);b.append(...te.children)}
-  if(msg.content){const body=document.createElement("div");body.innerHTML=markdown(msg.content);b.appendChild(body)}
-  else if(!r&&!msg.activity?.length){const t=document.createElement("div");t.style.color="var(--muted)";t.textContent="…";b.appendChild(t)}
-  if(preserveScroll)restoreChatScroll(previousScrollTop);
+  renderTurnView(target,msg,{streaming:true});
+  if(!chatAutoFollow)restoreChatScroll(previousScrollTop);
   else scrollBottom();
+  updateLatestButton();
 }
 async function openDB(){
   db=await new Promise((resolve,reject)=>{
@@ -1802,7 +1779,7 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClie
   return result;
 }
 async function sendMessage(){
-  if(running){abortController?.abort();return}
+  if(running)return;
   const text=els.prompt.value.trim();if(!text&&!pendingImages.length)return;
   const selected=selectedModel();
   if(pendingImages.length&&!selected.vision){
@@ -1828,8 +1805,8 @@ async function sendMessage(){
     c.messages.push({role:"user",content:text,images,at:nowISO()});
   }
   c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();renderPlan();
-  const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();els.send.classList.add("stop");els.send.textContent="■";setStatus(heavy?"計画を準備中":"生成中","busy");
-  const uiMsg={role:"assistant",content:"",toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
+  const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();syncQuickControls();setStatus(heavy?"計画を準備中":"生成中","busy");
+  const uiMsg={role:"assistant",content:"",timeline:[],_streaming:true,toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
   let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
   let webRecoveryGuidance="",webRecoveryAttempts=0,forceNextWebSearch=false,useClientWebFallback=false;
   try{
@@ -1842,6 +1819,8 @@ async function sendMessage(){
       renderStreamingAssistant(node,uiMsg);
       const {msg,usage,webFallback}=await streamRound(msgs,forcedPlan&&rounds===1,(partial)=>{
         uiMsg.content=partial.content||"";uiMsg.reasoning=partial.reasoning||"";uiMsg.reasoning_details=partial.reasoning_details;
+        recordTurnText(uiMsg,"reasoning",getReasoningText(uiMsg),rounds);
+        recordTurnText(uiMsg,"text",uiMsg.content,rounds);
         syncPartialToolActivity(uiMsg,partial);
         uiMsg.planSnapshot=structuredCloneSafe(c.plan);scheduleStreamingAssistantRender(node,uiMsg);
       },ev=>{
@@ -1849,6 +1828,8 @@ async function sendMessage(){
         scheduleStreamingAssistantRender(node,uiMsg);
       },{forceClientWeb:useClientWebFallback,forceTool:retryWebSearch?"web_search":null});
       flushStreamingAssistantRender(node,uiMsg);
+      recordTurnText(uiMsg,"reasoning",getReasoningText(msg),rounds);
+      recordTurnText(uiMsg,"text",msg.content||"",rounds);
       const clientCallCount=(msg.tool_calls||[]).filter(call=>!isServerToolName(call?.function?.name)).length;
       upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"done",clientCallCount?`${clientCallCount}件のToolを要求`:"回答を生成");
       if(usage){totalCost+=Number(usage.cost||0);totalOut+=Number(usage.completion_tokens||0)}
@@ -1893,7 +1874,7 @@ async function sendMessage(){
           }else if(isWebSearch){
             forceNextWebSearch=false;webRecoveryGuidance="";
           }
-          const ev=toolLog[0];if(ev)uiMsg.toolEvents.push(ev);
+          const ev=toolLog[0];if(ev)uiMsg.toolEvents.push({...ev,activityId});
           upsertActivity(uiMsg,activityId,friendlyToolName(call.function.name),failedWebSearch?"failed":"done",failedWebSearch?(result.error||"検索結果0件 · クエリを修正して再試行"):(ev?.summary||detail||"完了"));
           c.messages.push({role:"tool",tool_call_id:call.id,name:call.function.name,content:JSON.stringify(result),internal:true});
           uiMsg.planSnapshot=structuredCloneSafe(c.plan);renderStreamingAssistant(node,uiMsg);
@@ -1901,14 +1882,14 @@ async function sendMessage(){
         persistChats();continue;
       }
       uiMsg.content=msg.content||"";uiMsg.reasoning=msg.reasoning||"";uiMsg.reasoning_details=msg.reasoning_details;uiMsg.annotations=msg.annotations;
-      const final={role:"assistant",content:uiMsg.content,at:nowISO(),toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),annotations:uiMsg.annotations,planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,
+      const final={role:"assistant",content:uiMsg.content,timeline:uiMsg.timeline,at:nowISO(),toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),annotations:uiMsg.annotations,planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,
         meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
       if(msg.reasoning)final.reasoning=msg.reasoning;if(msg.reasoning_details)final.reasoning_details=msg.reasoning_details;
       const reasonTok=usage?.completion_tokens_details?.reasoning_tokens??usage?.reasoning_tokens;if(reasonTok!=null)final.reasoning_tokens=reasonTok;
       c.messages.push(final);c.updatedAt=nowISO();
       // Tool結果は最終回答へ要約されたので、次ターンの無駄なトークン消費と古いファイル内容の混入を防ぐため破棄。
       c.messages=c.messages.filter(m=>!m.internal);
-      persistChats();renderThread();renderChatList();renderPlan();setStatus("完了","ok");return;
+      finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();renderPlan();setStatus("完了","ok");return;
     }
     throw new Error(`Tool Callingが最大${settings.maxRounds}ラウンドに達しました。`);
   }catch(e){
@@ -1921,10 +1902,10 @@ async function sendMessage(){
         setKeyStatus(`認証エラー: HTTP ${e.httpStatus||401} · アクセスパスワードを確認してください`,"bad");
       },120);
     }else{uiMsg.error=e.message||String(e);setStatus("エラー","err")}
-    const final={role:"assistant",content:uiMsg.content||"",reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
-    c.messages.push(final);c.updatedAt=nowISO();c.messages=c.messages.filter(m=>!m.internal);persistChats();renderThread();renderChatList();
+    const final={role:"assistant",content:uiMsg.content||"",timeline:uiMsg.timeline,reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
+    c.messages.push(final);c.updatedAt=nowISO();c.messages=c.messages.filter(m=>!m.internal);finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();
   }finally{
-    running=false;abortController=null;els.send.classList.remove("stop");renderEditMode();
+    running=false;abortController=null;renderEditMode();syncQuickControls();
   }
 }
 function structuredCloneSafe(v){ if(v==null)return null;try{return structuredClone(v)}catch{return JSON.parse(JSON.stringify(v))} }
@@ -2041,12 +2022,32 @@ els.modelSelect.onchange=()=>{settings.model=els.modelSelect.value;syncChips()};
 els.apiKey.addEventListener("input",()=>{setKeyStatus("アクセスパスワード状態: 未確認（入力内容が変更されました）","");if(els.authDiag)els.authDiag.style.display="none"});
 $("#cancelEditBtn").onclick=()=>cancelMessageEdit();
 els.thread.addEventListener("click",e=>{
+  const artifact=e.target.closest("[data-open-artifact]");
+  if(artifact){togglePlay(true);setPlayTab("files");openFile(artifact.dataset.openArtifact).catch(error=>toast(error.message));return}
+  const copy=e.target.closest("[data-copy-response]");
+  if(copy){navigator.clipboard.writeText(copy.closest(".message").displayMessage?.content||"").then(()=>toast("コピーしました"),()=>toast("コピーできませんでした"));return}
   const button=e.target.closest("[data-message-action]");if(!button)return;
   const index=Number(button.closest(".message")?.dataset.messageIndex);if(!Number.isInteger(index))return;
   if(button.dataset.messageAction==="edit")beginMessageEdit(index);
   else if(button.dataset.messageAction==="delete")deleteMessage(index);
 });
-els.send.onclick=sendMessage;els.prompt.addEventListener("input",resizePrompt);els.prompt.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();sendMessage()}});
+els.send.onclick=sendMessage;els.prompt.addEventListener("input",resizePrompt);els.prompt.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&!e.isComposing){e.preventDefault();if(!running)sendMessage()}});
+$("#stopBtn").onclick=()=>abortController?.abort();
+$("#jumpLatest").onclick=()=>scrollBottom({force:true});
+$("#closePlayBtn").onclick=()=>togglePlay(false);
+$("#quickModel").onchange=e=>{
+  if(running)return;
+  const entry=modelCatalog.find(m=>`${m.provider}:${m.id}`===e.target.value);if(!entry)return;
+  settings.provider=entry.provider;settings.model=entry.id;persistSettings();syncChips();
+};
+for(const [id,key] of [["#quickReasoning","reasoning"],["#quickWeb","web"],["#quickPlanner","planner"]])$(id).onchange=e=>{
+  if(running)return;settings[key]=e.target.type==="checkbox"?e.target.checked:e.target.value;persistSettings();syncChips();
+};
+new ResizeObserver(entries=>els.content.style.setProperty("--composer-height",`${entries[0].target.offsetHeight}px`)).observe($(".composerWrap"));
+document.addEventListener("selectionchange",()=>{
+  if(!window.getSelection()?.isCollapsed)return;
+  for(const node of $$(".message.assistant"))if(node.displayMessage)renderTurnView(node,node.displayMessage,{streaming:node.displayStreaming,messageIndex:node.dataset.messageIndex===undefined?null:Number(node.dataset.messageIndex)});
+});
 els.prompt.addEventListener("paste",e=>{const files=[...e.clipboardData.items].filter(item=>item.type.startsWith("image/")).map(item=>item.getAsFile()).filter(Boolean);if(files.length){e.preventDefault();addImageFiles(files)}});
 $("#workspaceBtn").onclick=()=>togglePlay();$("#openPlayBtn").onclick=()=>togglePlay(true);$("#exportBtn").onclick=exportChat;
 $$(".playTab").forEach(b=>b.onclick=()=>setPlayTab(b.dataset.tab));
@@ -2072,7 +2073,7 @@ window.addEventListener("beforeunload",e=>{if(running){e.preventDefault();e.retu
 async function init(){
   applyTheme();syncChips();await loadModelCatalog();await openDB();await renderFiles();renderToolLog();
   if(!chats.length)createChat();else{activeChatId=chats[0].id;renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan()}
-  if(!getApiKey())setTimeout(openSettings,250);
+  if(!getApiKey())setTimeout(()=>{if(!getApiKey())openSettings()},250);
 }
 init().catch(e=>{console.error(e);toast("初期化エラー: "+e.message);setStatus("初期化エラー","err")});
 </script>

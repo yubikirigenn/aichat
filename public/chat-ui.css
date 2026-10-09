@@ -1,0 +1,40 @@
+/* Conversation-first workspace. Execution detail is progressively disclosed. */
+:root{--play: min(46vw,620px)}
+.topbar{height:52px;padding:0 20px}.chatTitle{font-size:14px}.runStatus{font-size:12px}
+.topBtn,.chatItemTitle,.brandTitle{font-size:13px}.sideFooter{display:none}
+.chatPane{position:relative}.chatScroll{padding:28px 24px 24px;overscroll-behavior:contain;overflow-anchor:none}
+.thread{width:min(820px,100%);gap:32px}.message.assistant{display:block}.message.assistant>.avatar{display:none}
+.message.assistant .bubble{font-size:15px;line-height:1.75}.message.user{display:block;max-width:85%;margin-left:auto}
+.message.user>.avatar{display:none}.message.user .bubble{padding:10px 16px;font-size:15px}
+.messageActions{height:auto;min-height:26px;gap:8px;margin-top:8px}.messageAction{font-size:12px;background:transparent;padding:4px 6px}
+.empty{min-height:45vh}.empty .hero{display:none}.empty h1{font-size:22px}
+.composerWrap{position:relative;padding:12px 24px max(16px,env(safe-area-inset-bottom));background:var(--bg);flex-shrink:0}
+.composer{width:min(820px,100%);border-radius:18px;box-shadow:none;padding:8px 10px}
+.chips{display:none!important}.prompt{font-size:15px;min-height:58px;max-height:200px}
+.composerBottom{gap:8px;align-items:center}.composerLeft{gap:4px;min-width:0;flex:1}
+.quickModel{min-width:0;max-width:260px;flex:1;background:transparent;border:0;color:var(--muted);font:inherit;font-size:12px;padding:7px 4px;text-overflow:ellipsis}
+.composerTools{position:relative}.composerTools summary{list-style:none;cursor:pointer;font-size:12px;padding:7px 9px;color:var(--muted);border-radius:8px}
+.composerTools summary:hover{background:var(--panel2)}.composerTools summary::-webkit-details-marker{display:none}
+.quickToolsPanel{position:absolute;bottom:42px;left:0;width:210px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow);z-index:12}
+.quickToolsPanel label{display:flex;align-items:center;gap:8px;padding:8px;font-size:13px}.quickToolsPanel select{width:105px;margin-left:auto;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px}
+.cBtn{border-radius:8px}.stopBtn{width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:var(--panel2);color:var(--text);cursor:pointer}.stopBtn[hidden]{display:none}
+.sendBtn:disabled{opacity:.35;cursor:default}.jumpLatest{position:absolute;bottom:calc(var(--composer-height,150px) + 12px);left:50%;transform:translateX(-50%);border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:20px;padding:8px 14px;box-shadow:var(--shadow);font-size:12px;z-index:5;cursor:pointer}.jumpLatest[hidden]{display:none}
+.turnTimeline{display:flex;flex-direction:column;gap:14px}.timelineText{min-width:0}.executionRow{border:0;background:transparent;min-width:0;color:var(--muted)}
+.completedWork>summary{font-size:13px;color:var(--muted);cursor:pointer;padding:4px 0}.completedWork>.executionRow{margin:8px 0}
+.executionRow>summary{list-style:none;display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;line-height:1.6;padding:3px 0}.executionRow>summary::-webkit-details-marker{display:none}
+.executionRow>summary::after{content:'›';margin-left:auto;color:var(--muted)}.executionRow[open]>summary::after{transform:rotate(90deg)}
+.executionGlyph{width:18px;flex:none;text-align:center}.executionRow[data-state=running] .executionGlyph{animation:pulse 1.2s infinite}
+.executionRow[data-state=failed]>summary{color:var(--danger)}.executionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.executionDetail{border-left:1px solid var(--line);margin:8px 0 0 8px;padding:2px 0 4px 19px;font-size:13px;min-width:0}
+.executionDetail pre{font-size:12px;max-height:360px;overflow:auto;white-space:pre-wrap}
+.reasoningText{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px;line-height:1.7;max-height:360px;overflow:auto;overscroll-behavior:contain;user-select:text}
+.artifactLink{display:inline-block;margin:8px 0;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:5px 9px;color:var(--text);font-size:12px;cursor:pointer}
+.turnFooter{margin-top:12px}.turnFooter .meta{font-size:11px}.turnFooter .pill{background:transparent;padding:0}.turnFooter .meta details{cursor:pointer}
+.turnFooter .meta summary{list-style:none}.turnFooter .meta details[open] summary{margin-bottom:6px}
+.planGoal,.planStep{font-size:13px}.planCount{font-size:12px}.playHead{height:auto;min-height:52px;flex-wrap:wrap;gap:8px;padding:10px 12px}.playTab{font-size:12px}.playTitle{font-size:13px}.closePlay{border:0;background:transparent;font-size:13px;color:var(--muted);padding:7px;cursor:pointer}
+.fileItem,.fileToolbar button,.currentPath,.editorActions button{font-size:12px}.content.withPlay{grid-template-columns:minmax(340px,1fr) var(--play)}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+@media(hover:none){.messageActions{opacity:1;pointer-events:auto}}
+@media(max-width:1050px){:root{--play:46vw}.content.withPlay{grid-template-columns:minmax(300px,1fr) var(--play)}}
+@media(max-width:760px){.chatScroll{padding:20px 16px}.composerWrap{padding:8px 10px max(10px,env(safe-area-inset-bottom))}.thread{gap:26px}.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{display:flex}.quickModel{max-width:180px}.message.user{max-width:92%}.topbar{padding:0 10px}.topRight #exportBtn{display:none}.playBody{grid-template-columns:110px minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.executionRow[data-state=running] .executionGlyph{animation:none}}
