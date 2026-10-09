@@ -81,6 +81,7 @@ function providerAccess(providerId) {
   const provider = providerFor(providerId);
   if (!provider) return { ok: false, reason: "unknown_provider" };
   if (providerId === "experientiallabs") return { ok: false, reason: "billing_safety", provider };
+  if (providerId === "tokenharbor" && process.env.TOKENHARBOR_FREE_ACCESS_CONFIRMED !== "true") return { ok: false, reason: "tokenharbor_free_unconfirmed", provider };
   if (providerId === "gemini" && process.env.GEMINI_FREE_TIER_CONFIRMED !== "true") return { ok: false, reason: "free_tier_unconfirmed", provider };
   const apiKey = normalizeApiKey(process.env[provider.keyEnv]);
   if (!apiKey) return { ok: false, reason: "provider_configuration", provider };
@@ -89,6 +90,7 @@ function providerAccess(providerId) {
 
 function redactSecrets(value) {
   return String(value || "")
+    .replace(/thk_[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(/sk-or-v1-[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]");
 }
@@ -116,6 +118,7 @@ function parseErrorBody(text, status, providerLabel = "OpenRouter") {
 }
 
 function authFailureMessage(reason, provider = null) {
+  if (reason === "tokenharbor_free_unconfirmed") return "Token Harborのダッシュボードで無料モデルの利用条件・データ保存条件を確認し無料アクセスを有効化後、RenderにTOKENHARBOR_FREE_ACCESS_CONFIRMED=trueを設定してください。有料モデルへは切り替えません。";
   if (reason === "billing_safety") return "XPLの無料適用を保証できず課金報告があるため、このアプリからの送信を停止しています。XPLの利用履歴・Credits overflow・Waterfallを確認してください。";
   if (reason === "free_tier_unconfirmed") return "GeminiはFree Tierプロジェクトのキーを使用してください。Google AI Studioで確認後、RenderでGEMINI_FREE_TIER_CONFIRMED=trueを設定してください。有料キーを無料へ変更する機能ではありません。";
   if (reason === "server_configuration") {
@@ -134,7 +137,7 @@ function authFailureMessage(reason, provider = null) {
 }
 
 function sendAuthError(res, auth) {
-  const serverConfiguration = ["server_configuration", "provider_configuration", "unknown_provider", "billing_safety", "free_tier_unconfirmed"].includes(auth.reason);
+  const serverConfiguration = ["server_configuration", "provider_configuration", "unknown_provider", "billing_safety", "free_tier_unconfirmed", "tokenharbor_free_unconfirmed"].includes(auth.reason);
   return res.status(serverConfiguration ? 503 : 401).json({
     error: {
       message: authFailureMessage(auth.reason, auth.provider),
@@ -163,6 +166,13 @@ function adaptProviderBody(provider, body, model = null) {
     if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
   }
   if (!supportsTemperature) delete adapted.temperature;
+  if (provider.id === "tokenharbor") {
+    delete adapted.plugins; delete adapted.extra_body; delete adapted.service_tier;
+    adapted.messages = (adapted.messages || []).map(message => {
+      const { reasoning: _reasoning, reasoning_details: _details, ...rest } = message;
+      return rest;
+    });
+  }
   if (provider.id === "gemini") {
     delete adapted.reasoning; delete adapted.plugins;
     delete adapted.reasoning_effort;

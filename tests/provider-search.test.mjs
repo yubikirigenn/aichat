@@ -28,6 +28,35 @@ test("batch runs three queries concurrently, preserves partial success and merge
 const server=readFileSync(new URL("../server.mjs",import.meta.url),"utf8");
 const adapter=server.slice(server.indexOf("function adaptProviderBody("),server.indexOf("async function providerFetch("));
 const adapt=runInNewContext(adapter+";adaptProviderBody");
+test("Token Harbor requires free access opt-in and rejects paid base IDs",()=>{
+  const source=server.slice(server.indexOf("function providerAccess("),server.indexOf("function redactSecrets("));
+  const env={TOKENHARBOR_API_KEY:"thk_live_test"};
+  const access=runInNewContext(source+";providerAccess",{providerFor,process:{env},normalizeApiKey:v=>v||""});
+  assert.equal(access("tokenharbor").reason,"tokenharbor_free_unconfirmed");
+  env.TOKENHARBOR_FREE_ACCESS_CONFIRMED="true";assert.equal(access("tokenharbor").ok,true);
+  delete env.TOKENHARBOR_API_KEY;assert.equal(access("tokenharbor").reason,"provider_configuration");
+  const models=MODEL_CATALOG.filter(m=>m.provider==="tokenharbor");assert.equal(models.length,3);
+  for(const model of models){
+    assert.ok(model.id.endsWith(":free")&&model.vision);
+    assert.equal(MODEL_CATALOG.find(m=>m.provider==="tokenharbor"&&m.id===model.id.replace(/:free$/,"")),undefined);
+  }
+});
+test("Token Harbor preserves images and function calls without unsupported extensions",()=>{
+  const model=MODEL_CATALOG.find(m=>m.provider==="tokenharbor");
+  const body={model:model.id,reasoning:{enabled:true},reasoning_effort:"high",extra_body:{google:{}},service_tier:"priority",plugins:[{id:"web"}],
+    stream:true,temperature:0.4,tools:[{type:"function",function:{name:"web_search"}},{type:"openrouter:web_search"}],
+    messages:[{role:"user",content:[{type:"image_url",image_url:{url:"data:image/png;base64,test"}}]},{role:"assistant",reasoning:"summary",reasoning_details:[],tool_calls:[{id:"a",type:"function",function:{name:"web_search",arguments:"{}"}}]}]};
+  const result=adapt(PROVIDERS.tokenharbor,body,model);
+  for(const field of ["reasoning","reasoning_effort","extra_body","plugins","service_tier"])assert.equal(result[field],undefined);
+  assert.equal(result.model,model.id);assert.equal(result.stream,true);assert.equal(result.tools.length,1);
+  assert.equal(result.messages[0].content[0].type,"image_url");assert.equal(result.messages[1].reasoning,undefined);
+  assert.equal(result.messages[1].tool_calls[0].id,"a");assert.equal(body.messages[1].reasoning,"summary");
+});
+test("Token Harbor keys are redacted from upstream errors",()=>{
+  const source=server.slice(server.indexOf("function redactSecrets("),server.indexOf("function parseErrorBody("));
+  const redact=runInNewContext(source+";redactSecrets");
+  assert.doesNotMatch(redact("invalid thk_live_private-key and Bearer thk_live_another"),/private-key|another/);
+});
 test("Gemini adapter translates reasoning, keeps tool choice and tool signatures, strips paid/native extras",()=>{
   const model=MODEL_CATALOG.find(m=>m.provider==="gemini");assert.ok(model.vision);
   const signature={google:{thought_signature:"sample-signature"}};

@@ -46,6 +46,13 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     await page.waitForFunction(()=>db?.version===2);
     assert.equal(await page.evaluate(async()=>(await getFile("kept.txt")).content),"preserved");
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
+    const previousModel=await page.locator("#quickModel").inputValue();
+    await page.locator("#quickModel").selectOption("tokenharbor:deepseek-v4.1-flash:free");
+    assert.equal(await page.evaluate(()=>settings.provider),"tokenharbor");
+    assert.equal(await page.evaluate(()=>selectedModel().vision),true);
+    assert.equal(await page.evaluate(()=>buildTools().some(t=>t.function?.name==="web_search")),true);
+    assert.equal(await page.evaluate(()=>buildTools().some(t=>t.type==="openrouter:web_search")),false);
+    await page.locator("#quickModel").selectOption(previousModel);
     await page.evaluate(async()=>{
       let round=0;
       streamRound=async(messages,forced,onUpdate)=>{

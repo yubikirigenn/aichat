@@ -10,6 +10,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
         ↓
       Render の server.mjs（許可リストで選択モデルを検証）
         ├─ Render環境変数の GROQ_API_KEY → Groq
+        ├─ Render環境変数の TOKENHARBOR_API_KEY → Token Harbor（:freeルートのみ）
         ├─ Render環境変数の GEMINI_API_KEY → Gemini（Free Tier確認後）
         ├─ Experiential Labs → 課金安全性の確認中、送信停止
         └─ Render環境変数の OPENROUTER_API_KEY → OpenRouter
@@ -19,7 +20,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 
 ## 主な機能
 
-- Gemini / Groq / OpenRouter のプロバイダ選択（XPLは送信停止中）
+- Token Harbor / Gemini / Groq / OpenRouter のプロバイダ選択（XPLは送信停止中）
 - 2026-10-09時点で確認した無料プラン・無料オファー・無料モデルの登録
 - モデル選択を「画像対応」「画像非対応」に分離
 - クリップボード画像の貼り付け、画像ファイル添付、画像プレビュー
@@ -39,7 +40,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
   - [FxEmbedの公開API](https://github.com/FxEmbed/FxEmbed/wiki/Status-Fetch-API)をRenderから利用。XのAPIキー・ログインは不要ですが、投稿IDがこの第三者サービスに送られます
   - 非公開・削除・取得制限には対応せず、スレッド全体や返信一覧は取得しません。画像・動画の内容解析は行いません。取得元の停止や制限で利用できない場合があります
   - 成功結果は最大200件・60秒キャッシュ。一時的な取得障害は1回再試行します
-- Gemini / Groq / OpenRouterで使える汎用 Web検索
+- Token Harbor / Gemini / Groq / OpenRouterで使える汎用 Web検索
   - `web_search` は単一の `query` に加え `queries`（最大6件）に対応。最大3クエリを並列実行し、各クエリの成功・失敗・0件を区別して返します。共通フィルターを適用し、結果URLを重複排除します
   - `/api/web-search`（Bing / DuckDuckGoを並列取得、必要時にLiteへフォールバック）と `/api/web-fetch` をサーバで実行
   - 有効な検索結果が届いたら追加200msだけ別エンジンの結果を集約し、遅い通信をキャンセル。1秒間有効結果がなければLiteを先行開始し、1クエリ全体の待ち時間を6.5秒に制限します。結果の `elapsed_ms` / `backend_timings` / `partial` / `deadline_reached` で時間・一部返却を確認できます。絞り込みは緩めません
@@ -63,6 +64,10 @@ OpenRouterは、Models APIで入力・出力料金がともに$0のチャット�
 
 ## Render への設定
 
+Token Harborは2026-10-10 JSTに[公式Free一覧](https://www.tokenharbor.ai/models?category=free)で確認した `claude-haiku-5.5:free`（期間限定）、`deepseek-v4.1-flash:free`、`mimo-v2.6-flash:free` の3ルートのみ登録しています。すべて画像入力あり。音声・動画・ファイル入力はこのアプリでは未対応です。[OpenAI互換API](https://www.tokenharbor.ai/docs/api/curl)へサーバーから接続します。Thinkingの明示パラメーターは確認できないため送らず、モデルから返された思考表示は残します。Function Toolの実利用はアカウント・ルートの対応に依存します。
+
+[無料アクセス条件](https://www.tokenharbor.ai/docs/billing/cashback)では、`:free`ルートは残高に課金せず、無料枠には利用上限があります。無料モデルを有効化すると入力・出力が保存される場合があるため、Token Harborのダッシュボードで条件を確認・有効化後、`TOKENHARBOR_FREE_ACCESS_CONFIRMED=true` を設定してください。この値は管理者の確認記録であり、上流の条件を自動検証するものではありません。期間終了・枠超過時に有料IDへ自動変更しません。
+
 Geminiは[Google公式料金表](https://ai.google.dev/gemini-api/docs/pricing)で無料入力・出力のあるチャットモデルを登録し、[OpenAI互換API](https://ai.google.dev/gemini-api/docs/openai)へ接続します。画像入力・Function Tool・ストリーミングに対応。検索はこのアプリのFunction Toolを使用し、Googleの有料Groundingには切り替えません。Google AI Studioで**Free Tier**のプロジェクトを選び、そのキーを使用してください。有料Tierでは同じモデルでも課金されます。確認後のみ `GEMINI_FREE_TIER_CONFIRMED=true` を設定してください。この値は管理者の確認記録であって、Googleの課金状態を自動検証したり無料利用を強制するものではありません。無料枠にはレート・日次制限とデータ利用条件があり、上限時に別の有料モデルへ自動切替しません。
 
 1. GitHub でこのリポジトリを Render に接続します。
@@ -70,6 +75,8 @@ Geminiは[Google公式料金表](https://ai.google.dev/gemini-api/docs/pricing)�
    - `APP_ACCESS_PASSWORD`: アプリに入力するアクセスパスワード
    - `OPENROUTER_API_KEY`: OpenRouterを使う場合のAPIキー
    - `GROQ_API_KEY`: Groqを使う場合のAPIキー
+   - `TOKENHARBOR_API_KEY`: Token HarborのAPIキー（`thk_live_…`）
+   - `TOKENHARBOR_FREE_ACCESS_CONFIRMED`: 無料利用・データ保存条件を確認し有効化した場合のみ`true`（既定`false`）
    - `GEMINI_API_KEY`: Google AI StudioのFree TierプロジェクトのAPIキー
    - `GEMINI_FREE_TIER_CONFIRMED`: 上記を確認した場合のみ`true`（既定`false`）
    - `EXPERIENTIAL_LABS_API_KEY`: 現在は送信停止のため使用しません

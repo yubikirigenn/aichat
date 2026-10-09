@@ -5,6 +5,13 @@
 // provider/model pair against this allowlist before forwarding a request.
 
 export const PROVIDERS = Object.freeze({
+  tokenharbor: Object.freeze({
+    id: "tokenharbor", label: "Token Harbor",
+    baseUrl: "https://tokenharbor.ai/v1", keyEnv: "TOKENHARBOR_API_KEY",
+    // No documented cross-model thinking control; retain returned summaries.
+    supportsReasoning: false,
+    freeLabel: "FREE · 枠制限あり", docsUrl: "https://www.tokenharbor.ai/docs/billing/cashback",
+  }),
   gemini: Object.freeze({
     id: "gemini", label: "Gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -116,6 +123,15 @@ const OPENROUTER_MODEL_CATALOG = OPENROUTER_FREE_MODELS.map(
 );
 
 export const MODEL_CATALOG = Object.freeze([
+  // Official Free picker checked 2026-10-10 JST. Never substitute paid base IDs.
+  ...[
+    ["claude-haiku-5.5:free", "Claude Haiku 5.5", "期間限定の無料ルート。終了・上限時はエラーのまま停止します。"],
+    ["deepseek-v4.1-flash:free", "DeepSeek V4.1 Flash", "無料枠の対象ルートです。"],
+    ["mimo-v2.6-flash:free", "MiMo V2.6 Flash", "無料枠の対象ルートです。"],
+  ].map(([id, name, note]) => model("tokenharbor", id, name, {
+    vision: true, supportsReasoning: false,
+    note: `${note} Token Harbor側で無料モデルを有効化してください。無料ルートでは入力・出力が保存される場合があります。Thinkingの明示設定は送らず、返された内容のみ表示します。`,
+  })),
   ...["3.8-flash", "3.7-flash", "3.6-flash", "3.5-flash", "3.5-flash-lite", "3.1-flash-lite", "2.5-pro", "2.5-flash", "2.5-flash-lite"].map(version =>
     model("gemini", `gemini-${version}`, `Gemini ${version.replace(/-/g, " ")}`, {
       vision: true, note: "Google AI StudioでFree Tierのプロジェクトのキーを使用。有料プロジェクトのキーでは課金されます。無料枠の入力は製品改善に利用される場合があります。",
