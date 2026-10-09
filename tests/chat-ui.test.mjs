@@ -32,7 +32,19 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     const page=await browser.newPage({viewport:{width:1440,height:960}}),errors=[];
     page.on("pageerror",error=>errors.push(error.message));
     await page.route("**/*",route=>route.request().url().startsWith("http://127.0.0.1:31302")?route.continue():route.abort());
+    // Seed the old schema before loading the app; migration must preserve files.
+    await page.goto("http://127.0.0.1:31302/api/health");
+    await page.evaluate(()=>new Promise((resolve,reject)=>{
+      const request=indexedDB.open("NemotronWorkspaceDB",1);
+      request.onupgradeneeded=()=>request.result.createObjectStore("files",{keyPath:"path"});
+      request.onerror=()=>reject(request.error);request.onsuccess=()=>{
+        const db=request.result,transaction=db.transaction("files","readwrite");transaction.objectStore("files").put({path:"kept.txt",content:"preserved"});
+        transaction.oncomplete=()=>{db.close();resolve()};
+      };
+    }));
     await page.goto("http://127.0.0.1:31302");await page.waitForFunction(()=>!!document.querySelector("#quickModel option"));
+    await page.waitForFunction(()=>db?.version===2);
+    assert.equal(await page.evaluate(async()=>(await getFile("kept.txt")).content),"preserved");
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     await page.evaluate(async()=>{
       let round=0;
@@ -90,6 +102,43 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       const shown=node.textContent.includes("Gemini Free Tier")&&node.textContent.includes("検索失敗");node.remove();
       return result.ok&&shown&&document.querySelector("#quickModel").value==="gemini:gemini-3.8-flash";
     });assert.equal(batchTool,true);
+    let activeReads=0,peakReads=0;
+    await page.route("**/api/web-fetch",async route=>{
+      activeReads++;peakReads=Math.max(peakReads,activeReads);
+      const url=route.request().postDataJSON().url;
+      await new Promise(resolve=>setTimeout(resolve,url.endsWith("a")?90:30));activeReads--;
+      await route.fulfill({json:{ok:true,url,content:"prefix "+"x".repeat(12000)+"NEEDLE "+url}});
+    });
+    const generation=await page.evaluate(async()=>{
+      let round=0,ordered=false;
+      streamRound=async(messages,forced,onUpdate)=>{
+        round++;
+        if(round===2){const tools=messages.filter(m=>m.role==="tool");ordered=tools.map(t=>t.tool_call_id).join(",")==="read-a,read-b,read-c"&&tools.every(t=>JSON.parse(t.content).result_ref)}
+        const msg=round===1?{role:"assistant",content:"",tool_calls:["a","b","c"].map(id=>({id:"read-"+id,function:{name:"web_fetch",arguments:JSON.stringify({url:"https://example.com/"+id})}}))}:{role:"assistant",content:"並列取得を確認しました。"};
+        onUpdate(msg);return {msg};
+      };
+      els.prompt.value="並列取得テスト";await sendMessage();
+      const chat=activeChat(),last=chat.messages.at(-1),events=last.toolEvents;
+      const refs=events.map(e=>e.detail.result.result_ref);
+      const found=await executeTool({function:{name:"tool_result_search",arguments:JSON.stringify({result_ref:refs[0],query:"NEEDLE"})}});
+      const read=await executeTool({function:{name:"tool_result_read",arguments:JSON.stringify({result_ref:refs[0],offset:found.matches[0].offset,limit:1000})}});
+      let otherChatBlocked=false;try{await getStoredObservation(refs[0],"another-chat")}catch{otherChatBlocked=true}
+      return {ordered,first_ref:refs[0],refs:refs.length,found:found.count,read:read.content.includes("NEEDLE"),otherChatBlocked,events:events.map(e=>({id:e.activityId,url:e.detail.arguments.url,resultUrl:e.detail.result.url}))};
+    });
+    assert.equal(peakReads,3);assert.equal(generation.ordered,true);assert.equal(generation.refs,3);assert.equal(generation.found,1);assert.equal(generation.read,true);assert.equal(generation.otherChatBlocked,true);
+    for(const event of generation.events)assert.equal(event.url,event.resultUrl);
+    assert.equal(await page.locator("[data-result-download]").count(),3);
+    const downloadPromise=page.waitForEvent("download");
+    await page.locator("[data-result-download]").first().evaluate(button=>button.click());
+    assert.ok((await downloadPromise).suggestedFilename().startsWith("result-"));
+    await page.reload();await page.waitForFunction(()=>db?.version===2);
+    await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
+    assert.equal(await page.evaluate(async ref=>(await getStoredObservation(ref,activeChat().id)).text.includes("NEEDLE"),generation.first_ref),true);
+    page.once("dialog",dialog=>dialog.dismiss());
+    const denied=await page.evaluate(async()=>{
+      const result=await executeTool({function:{name:"workspace_delete_file",arguments:JSON.stringify({path:"kept.txt"})}});
+      return result.code==="user_denied"&&(await getFile("kept.txt")).content==="preserved";
+    });assert.equal(denied,true);
     await page.evaluate(()=>{
       streamRound=async()=>new Promise((resolve,reject)=>abortController.signal.addEventListener("abort",()=>reject(new DOMException("Stopped","AbortError"))));
       els.prompt.value="停止テスト";void sendMessage();
@@ -100,6 +149,21 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     assert.equal(await page.evaluate(()=>running),true);
     await page.locator("#stopBtn").click();await page.waitForFunction(()=>!running);
     assert.equal(await page.locator("#prompt").inputValue(),"次の下書き");
+    await page.evaluate(()=>{
+      window.savedFetchForTest=window.fetch;window.pendingReadsForTest=0;window.cancelledReadsForTest=0;
+      window.fetch=(url,options)=>url===WEB_FETCH_URL?new Promise((resolve,reject)=>{
+        window.pendingReadsForTest++;
+        options.signal.addEventListener("abort",()=>{window.cancelledReadsForTest++;reject(new DOMException("Stopped","AbortError"))},{once:true});
+      }):window.savedFetchForTest(url,options);
+      streamRound=async()=>({msg:{role:"assistant",content:"",tool_calls:["a","b"].map(id=>({id:"cancel-"+id,function:{name:"web_fetch",arguments:JSON.stringify({url:"https://example.com/"+id})}})).concat([{id:"blocked-write",function:{name:"workspace_write_file",arguments:JSON.stringify({path:"must-not-exist.txt",content:"blocked"})}}])}});
+      els.prompt.value="読取中の停止テスト";void sendMessage();
+    });
+    await page.waitForFunction(()=>window.pendingReadsForTest===2);
+    await page.locator("#stopBtn").click();await page.waitForFunction(()=>!running);
+    const stopped=await page.evaluate(async()=>{
+      window.fetch=window.savedFetchForTest;
+      return window.cancelledReadsForTest===2&&!(await getFile("must-not-exist.txt"));
+    });assert.equal(stopped,true);
     assert.deepEqual(errors,[]);
     if(process.env.CHAT_UI_SCREENSHOT)await page.screenshot({path:process.env.CHAT_UI_SCREENSHOT});
   }finally{await browser?.close();server.kill();await once(server,"exit")}

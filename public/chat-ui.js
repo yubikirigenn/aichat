@@ -91,6 +91,7 @@ function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
     let html="";
     if(event){
       const result=toolEventResult(event);
+      if(result?.result_ref)html+=`<button type="button" class="artifactLink" data-result-download="${escapeHTML(result.result_ref)}">取得結果をダウンロード</button>`;
       if(result?.searches)html+=result.searches.map(search=>`<div>${escapeHTML(search.query)} · ${search.ok?`${search.results.length}件`:escapeHTML(search.error||"失敗")}</div>`).join("");
       if(result?.post){
         const post=result.post;
