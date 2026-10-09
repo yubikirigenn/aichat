@@ -30,8 +30,14 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - `chart_render` による SVG の折れ線・棒グラフ
 - OpenRouter Web Search / Web Fetch Server Tool
 - OpenRouter 以外（Groq / Experiential Labs）でも使える汎用 Web検索
-  - `/api/web-search`（Bing / DuckDuckGo / Wikipedia を順に試行）と `/api/web-fetch` をサーバで実行
+  - `/api/web-search`（Bing / DuckDuckGoを並列取得、必要時にLiteへフォールバック）と `/api/web-fetch` をサーバで実行
   - モデルからは `web_search` / `web_fetch` Function Tool として公開
+- 検索の詳細絞り込み（OpenRouterでもFunction Toolとして利用可能）
+  - 対象・除外ドメイン、完全一致フレーズ、除外語、ファイル形式、直近1日／1週／1か月／1年、言語・地域
+  - ドメイン・形式・除外語はサーバでも検査。言語・地域・期間・完全一致は検索先への指定で、厳密な本文一致や公開日は保証しません
+  - 複数エンジンの結果を語句一致と元の順位で並べ替え、URL重複を除去。明らかな無関連結果は返さず、0件なら検索語修正へ戻します
+  - Wikipedia・Instant Answerの関連トピックを通常のWeb検索結果に混ぜません
+  - 絞り込み演算子・地域指定の参照: [DuckDuckGo検索構文](https://duckduckgo.com/duckduckgo-help-pages/results/syntax) / [地域パラメータ](https://duckduckgo.com/duckduckgo-help-pages/settings/params)
 - Web Search Server Tool が失敗した場合の Function Tool フォールバック
 - `/api/diagnostics` による APIキー、最小生成、Tool Calling の 401 診断
 - チャット履歴、ダークモード、JSON エクスポート

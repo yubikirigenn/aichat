@@ -1283,7 +1283,7 @@ const functionTools = [
 // Provider-agnostic web tools. Used for non-OpenRouter providers and as an
 // OpenRouter Server Tool fallback. Executed via this app's /api/web-* proxy.
 const webFunctionTools = [
-  {type:"function",function:{name:"web_search",description:"Search the public web for current information, news, facts, prices, weather, documentation, etc. Use this whenever the answer needs up-to-date or external information. Returns titles, URLs, and snippets.",parameters:{type:"object",properties:{query:{type:"string",description:"Search query in the language best suited to the sources (English often works best for international news)"},max_results:{type:"integer",minimum:1,maximum:10,description:"How many results to return (default 5)"}},required:["query"],additionalProperties:false}}},
+  {"type":"function","function":{"name":"web_search","description":"Search the public web. Use short focused keywords and optional filters. Domain exclusions are enforced locally; language/region/time and exact phrases are search-engine hints, not verified page metadata. Returns ranked, deduplicated titles, URLs, snippets, sources and active filters. Zero relevant results means revise the query, not invent an answer.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Short topic/entity keywords in the source language. Preserve names, versions and error codes; avoid full conversational instructions.","maxLength":500},"max_results":{"type":"integer","minimum":1,"maximum":10},"include_domains":{"type":"array","items":{"type":"string"},"maxItems":8,"description":"Only these domains and subdomains, OR combined. Bare hosts, e.g. docs.example.com. Use known primary-source domains for official information."},"exclude_domains":{"type":"array","items":{"type":"string"},"maxItems":8,"description":"Exclude these domains and subdomains."},"exact_phrases":{"type":"array","items":{"type":"string"},"maxItems":8,"description":"Ask the engine for these exact names, version strings or error messages. Verify matches in page text."},"exclude_terms":{"type":"array","items":{"type":"string"},"maxItems":8,"description":"Exclude terms from titles, snippets and URLs as well as the engine query."},"file_type":{"type":"string","enum":["any","pdf","docx","xlsx","pptx","txt"],"description":"Restrict to URLs ending with this file extension."},"time_range":{"type":"string","enum":["any","day","week","month","year"],"description":"Engine recency filter. Not a verified publication-date range; use web_fetch to check dates."},"language":{"type":"string","enum":["auto","ja","en"],"description":"Preferred source language; auto detects query language."},"region":{"type":"string","enum":["auto","JP","US","GB","DE","FR","CA","AU"],"description":"Preferred search region."}},"required":["query"],"additionalProperties":false}}},
   {type:"function",function:{name:"web_fetch",description:"Fetch and extract the readable text content of a public http(s) URL. Use after web_search when you need details from a specific result page, or when the user provides a URL.",parameters:{type:"object",properties:{url:{type:"string",description:"Absolute http(s) URL to fetch"},max_chars:{type:"integer",minimum:500,maximum:50000,description:"Approximate max characters of extracted text (default 12000)"}},required:["url"],additionalProperties:false}}}
 ];
 
@@ -1380,7 +1380,11 @@ async function executeTool(call){
       const query=String(args.query||"").trim();
       if(!query)throw new Error("query is required");
       const maxResults=clamp(Number(args.max_results||settings.webResults||5),1,10);
-      result=await callWebProxy(WEB_SEARCH_URL,{query,max_results:maxResults});
+      const filters={};
+      for(const name of ["include_domains","exclude_domains","exact_phrases","exclude_terms","file_type","time_range","language","region"]){
+        if(args[name]!==undefined)filters[name]=args[name];
+      }
+      result=await callWebProxy(WEB_SEARCH_URL,{query,max_results:maxResults,...filters});
     }else if(name==="web_fetch"){
       const url=String(args.url||"").trim();
       if(!url)throw new Error("url is required");
@@ -1468,6 +1472,9 @@ Web:
 - 現在情報・最新情報・外部事実の確認が必要なときは、必ず Web検索ツールを使ってください。
 - OpenRouter利用時は openrouter:web_search / openrouter:web_fetch（Server Tool）を使います。
 - その他のプロバイダ、またはServer Toolが使えない場合は web_search / web_fetch を使ってください。
+- ドメイン・除外語・完全一致・形式・期間・言語・地域で絞る場合は、OpenRouterでも web_search Function Toolを使ってください。
+- 検索は固有名詞・バージョン・エラーコードを保った短い語句で行い、公式情報は既知の公式ドメインを include_domains に指定します。国内情報は日本語・JP、海外資料は原文の言語を優先してください。
+- 結果の関連性が低い／0件なら同じ検索語を繰り返さず主要語を修正してください。ユーザー指定の必須条件を勝手に緩めてはいけません。期間・完全一致は検索先で厳密に適用されない場合があるため本文を確認します。検索抜粋だけで事実を断定しないでください。
 - 「今日のニュース」「最新の〜」「現在の価格」のような質問では、推測で答える前に必ず検索してください。
 - 検索結果のページ本文を詳しく読む必要がある場合は、そのURLで web_fetch（または openrouter:web_fetch）を使ってください。
 - 日付・時刻・「今日」「現在」などの正確な時間基準が必要なら current_datetime を使ってください。
@@ -1519,6 +1526,8 @@ function buildTools(includeServerWeb=true){
       {type:"openrouter:web_fetch",parameters:{engine:"openrouter",max_uses:Math.min(calls,10),max_content_tokens:50000}},
       {type:"openrouter:web_search",parameters:searchParams}
     );
+    // Advanced filters use our function tool, even when native search is available.
+    tools.push(...webFunctionTools);
     return tools;
   }
 

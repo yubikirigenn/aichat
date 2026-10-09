@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
+import { normalizeSearchOptions, runSearch } from "./search.mjs";
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_KEY,
@@ -552,17 +553,36 @@ function parseBingHtml(html, maxResults) {
   return results;
 }
 
-async function searchViaBing(query, maxResults) {
-  const endpoint = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en&cc=US`;
+function searchLocale(options) {
+  const language = options.language || "en";
+  const region = options.region === "auto" ? (language === "ja" ? "JP" : "US") : options.region;
+  return { language, region, accept: language === "ja" ? "ja,en;q=0.7" : "en,ja;q=0.5" };
+}
+
+function ddgSearchParams(query, options) {
+  const { language, region } = searchLocale(options);
+  const locales = { JP: "jp-jp", US: "us-en", GB: "uk-en", DE: "de-de", FR: "fr-fr", CA: "ca-en", AU: "au-en" };
+  const params = new URLSearchParams({ q: query, kl: locales[region], klang: language });
+  const range = { day: "d", week: "w", month: "m", year: "y" }[options.time_range];
+  if (range) params.set("df", range);
+  return params;
+}
+
+async function searchViaBing(query, maxResults, options) {
+  const { language, region, accept } = searchLocale(options);
+  const params = new URLSearchParams({ q: query, setlang: language, cc: region, count: String(maxResults) });
+  const days = { day: 1, week: 7, month: 30, year: 365 }[options.time_range];
+  if (days) params.set("filters", `ex1:"ez${days === 1 ? 1 : days === 7 ? 2 : days === 30 ? 3 : 4}"`);
+  const endpoint = `https://www.bing.com/search?${params}`;
   const response = await fetch(endpoint, {
     method: "GET",
     headers: {
       "User-Agent": SEARCH_UA,
       Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "en-US,en;q=0.9,ja;q=0.8",
+      "Accept-Language": accept,
     },
     redirect: "follow",
-    signal: AbortSignal.timeout(18000),
+    signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) throw new Error(`Bing HTTP ${response.status}`);
   const html = await response.text();
@@ -575,8 +595,8 @@ function decodeDdgUrl(href) {
   try {
     const url = new URL(raw, "https://duckduckgo.com");
     const uddg = url.searchParams.get("uddg");
-    if (uddg) return decodeURIComponent(uddg);
-    return raw;
+    if (uddg) return uddg;
+    return url.href;
   } catch {
     return raw;
   }
@@ -588,9 +608,8 @@ function parseDdgHtml(html, maxResults) {
   const blocks = String(html || "").split(/class="result\s+results_links/i).slice(1);
   for (const block of blocks) {
     if (results.length >= maxResults) break;
-    const hrefMatch = block.match(/class="result__a"[^>]*href="([^"]+)"/i)
-      || block.match(/<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"/i);
-    const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+    const anchor = block.match(/<a\b(?=[^>]*class="[^"]*\bresult__a\b)[^>]*>[\s\S]*?<\/a>/i)?.[0] || "";
+    const hrefMatch = anchor.match(/href="([^"]+)"/i);
     const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)
       || block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div|span)>/i);
     if (!hrefMatch) continue;
@@ -599,7 +618,7 @@ function parseDdgHtml(html, maxResults) {
     pushUniqueResult(
       results,
       seen,
-      { title: stripHtml(titleMatch?.[1] || url), url, snippet: stripHtml(snippetMatch?.[1] || "") },
+      { title: stripHtml(anchor || url), url, snippet: stripHtml(snippetMatch?.[1] || "") },
       maxResults,
     );
   }
@@ -609,31 +628,34 @@ function parseDdgHtml(html, maxResults) {
 function parseDdgLiteHtml(html, maxResults) {
   const results = [];
   const seen = new Set();
-  const rows = String(html || "").split(/class="result-link"/i).slice(1);
-  for (const row of rows) {
+  const anchors = [...String(html || "").matchAll(/<a\b(?=[^>]*class="[^"]*\bresult-link\b)[^>]*>[\s\S]*?<\/a>/gi)];
+  for (const [index, match] of anchors.entries()) {
     if (results.length >= maxResults) break;
-    const href = row.match(/href="([^"]+)"/i)?.[1] || "";
-    const title = stripHtml(row.split("</a>")[0]?.replace(/^.*?>/, "") || "");
+    const href = match[0].match(/href="([^"]+)"/i)?.[1] || "";
+    const title = stripHtml(match[0]);
+    const following = String(html).slice(match.index + match[0].length, anchors[index + 1]?.index);
+    const snippet = stripHtml(following.match(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
     const url = decodeDdgUrl(href);
     if (isJunkSearchUrl(url)) continue;
-    pushUniqueResult(results, seen, { title: title || url, url, snippet: "" }, maxResults);
+    pushUniqueResult(results, seen, { title: title || url, url, snippet }, maxResults);
   }
   return results;
 }
 
-async function searchViaDdgHtml(query, maxResults) {
+async function searchViaDdgHtml(query, maxResults, options) {
   const response = await fetch("https://html.duckduckgo.com/html/", {
     method: "POST",
     headers: {
       "User-Agent": SEARCH_UA,
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "ja,en-US;q=0.8,en;q=0.6",
+      "Accept-Language": searchLocale(options).accept,
     },
-    body: `q=${encodeURIComponent(query)}&b=`,
+    body: ddgSearchParams(query, options).toString(),
     redirect: "follow",
-    signal: AbortSignal.timeout(18000),
+    signal: AbortSignal.timeout(8000),
   });
+  if (!response.ok) throw new Error(`DuckDuckGo HTML HTTP ${response.status}`);
   const html = await response.text();
   if (/anomaly|challenge|captcha/i.test(html) && !/result__a/i.test(html)) {
     throw new Error("DuckDuckGo HTML returned a challenge page");
@@ -641,122 +663,26 @@ async function searchViaDdgHtml(query, maxResults) {
   return parseDdgHtml(html, maxResults);
 }
 
-async function searchViaDdgLite(query, maxResults) {
-  const endpoint = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+async function searchViaDdgLite(query, maxResults, options) {
+  const endpoint = `https://lite.duckduckgo.com/lite/?${ddgSearchParams(query, options)}`;
   const response = await fetch(endpoint, {
     method: "GET",
     headers: { "User-Agent": SEARCH_UA, Accept: "text/html" },
     redirect: "follow",
-    signal: AbortSignal.timeout(18000),
+    signal: AbortSignal.timeout(8000),
   });
+  if (!response.ok) throw new Error(`DuckDuckGo Lite HTTP ${response.status}`);
   const html = await response.text();
   return parseDdgLiteHtml(html, maxResults);
 }
 
-async function searchViaDdgInstantAnswer(query, maxResults) {
-  const endpoint = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers: { "User-Agent": SEARCH_UA, Accept: "application/json" },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error(`DuckDuckGo IA HTTP ${response.status}`);
-  const data = await response.json();
-  const results = [];
-  const seen = new Set();
-  if (data.AbstractText && data.AbstractURL) {
-    pushUniqueResult(
-      results,
-      seen,
-      { title: data.Heading || data.AbstractSource || query, url: data.AbstractURL, snippet: data.AbstractText },
-      maxResults,
-    );
-  }
-  if (data.Answer && data.AnswerURL) {
-    pushUniqueResult(results, seen, { title: data.Heading || "Answer", url: data.AnswerURL, snippet: data.Answer }, maxResults);
-  }
-  if (data.Definition && data.DefinitionURL) {
-    pushUniqueResult(results, seen, { title: data.Heading || "Definition", url: data.DefinitionURL, snippet: data.Definition }, maxResults);
-  }
-  const flattenTopics = (topics) => {
-    for (const topic of topics || []) {
-      if (Array.isArray(topic?.Topics)) flattenTopics(topic.Topics);
-      else if (topic?.FirstURL && topic?.Text) {
-        pushUniqueResult(results, seen, { title: String(topic.Text).slice(0, 160), url: topic.FirstURL, snippet: String(topic.Text) }, maxResults);
-      }
-    }
-  };
-  flattenTopics(data.RelatedTopics);
-  flattenTopics(data.Results);
-  return results;
-}
-
-async function searchViaWikipedia(query, maxResults) {
-  const endpoint = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=${maxResults}&namespace=0&format=json`;
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers: { "User-Agent": SEARCH_UA, Accept: "application/json" },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error(`Wikipedia HTTP ${response.status}`);
-  const data = await response.json();
-  const titles = data?.[1] || [];
-  const snippets = data?.[2] || [];
-  const urls = data?.[3] || [];
-  const results = [];
-  const seen = new Set();
-  for (let i = 0; i < urls.length; i++) {
-    pushUniqueResult(
-      results,
-      seen,
-      { title: titles[i] || query, url: urls[i], snippet: snippets[i] || "" },
-      maxResults,
-    );
-  }
-  // Also try Japanese Wikipedia when the query looks non-English.
-  if (results.length < maxResults && /[぀-ヿ一-鿿]/.test(query)) {
-    const jaEndpoint = `https://ja.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=${maxResults}&namespace=0&format=json`;
-    const jaRes = await fetch(jaEndpoint, {
-      method: "GET",
-      headers: { "User-Agent": SEARCH_UA, Accept: "application/json" },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (jaRes.ok) {
-      const ja = await jaRes.json();
-      const jt = ja?.[1] || [], js = ja?.[2] || [], ju = ja?.[3] || [];
-      for (let i = 0; i < ju.length; i++) {
-        pushUniqueResult(results, seen, { title: jt[i] || query, url: ju[i], snippet: js[i] || "" }, maxResults);
-      }
-    }
-  }
-  return results;
-}
 
 const SEARCH_BACKENDS = [
   { id: "bing", label: "Bing", run: searchViaBing },
   { id: "duckduckgo-html", label: "DuckDuckGo HTML", run: searchViaDdgHtml },
   { id: "duckduckgo-lite", label: "DuckDuckGo Lite", run: searchViaDdgLite },
-  { id: "duckduckgo-ia", label: "DuckDuckGo Instant Answer", run: searchViaDdgInstantAnswer },
-  { id: "wikipedia", label: "Wikipedia", run: searchViaWikipedia },
 ];
 
-async function multiEngineSearch(query, maxResults) {
-  const errors = [];
-  for (const backend of SEARCH_BACKENDS) {
-    try {
-      const results = await backend.run(query, maxResults);
-      if (results.length) {
-        return { results: results.slice(0, maxResults), provider: backend.id, errors };
-      }
-      errors.push(`${backend.id}: 0 results`);
-    } catch (error) {
-      errors.push(`${backend.id}: ${redactSecrets(error?.message || "failed")}`);
-    }
-  }
-  const err = new Error(`All search backends failed. ${errors.join(" | ")}`);
-  err.details = errors;
-  throw err;
-}
 
 function extractReadableText(html, maxChars) {
   let text = String(html || "");
@@ -814,22 +740,29 @@ app.post("/api/web-search", async (req, res) => {
   if (!auth.ok) return sendAuthError(res, auth);
 
   const query = String(req.body?.query || "").trim();
-  if (!query) {
+  if (!query || query.length > 500) {
     return res.status(400).json({
-      error: { message: "query is required", code: "invalid_query" },
+      error: { message: "queryは1〜500文字で指定してください。", code: "invalid_query" },
       proxy: true,
     });
   }
-  const maxResults = Math.min(Math.max(Number(req.body?.max_results) || 5, 1), 10);
+  const maxResults = Math.floor(Math.min(Math.max(Number(req.body?.max_results) || 5, 1), 10));
+  let options;
+  try { options = normalizeSearchOptions(req.body, query); }
+  catch (error) {
+    return res.status(400).json({ error: { message: error.message, code: "invalid_search_filter" }, proxy: true });
+  }
 
   try {
-    const { results, provider } = await multiEngineSearch(query, maxResults);
+    const { results, provider, errors, ...metadata } = await runSearch(SEARCH_BACKENDS, query, maxResults, options);
     return res.json({
       ok: true,
       query,
       provider,
       results,
       count: results.length,
+      ...metadata,
+      warnings: errors.map(error => redactSecrets(error)),
       retrieved_at: new Date().toISOString(),
     });
   } catch (error) {
@@ -837,7 +770,7 @@ app.post("/api/web-search", async (req, res) => {
       error: {
         message: `Web検索に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
         code: "web_search_failed",
-        details: error?.details || undefined,
+        details: error?.details?.map(detail => redactSecrets(detail)),
       },
       proxy: true,
     });
