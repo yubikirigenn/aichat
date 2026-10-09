@@ -1,4 +1,4 @@
-// Curated snapshot checked on 2026-10-04 (JST).
+// Curated snapshot checked on 2026-10-09 (JST).
 // "Free" means a current zero-priced promotion/tier or OpenRouter zero-priced endpoint.
 // Availability and rate limits can change; the server still validates every
 // provider/model pair against this allowlist before forwarding a request.
@@ -13,14 +13,6 @@ export const PROVIDERS = Object.freeze({
     freeLabel: "Free plan枠",
     docsUrl: "https://console.groq.com/docs/rate-limits",
   }),
-  bai: Object.freeze({
-    id: "bai",
-    label: "B.AI",
-    baseUrl: "https://api.b.ai/v1",
-    keyEnv: "BAI_API_KEY",
-    freeLabel: "API 0 Credits",
-    docsUrl: "https://docs.b.ai/llmservice/promotions-and-pricing-notices/",
-  }),
   experientiallabs: Object.freeze({
     id: "experientiallabs",
     label: "Experiential Labs",
@@ -28,7 +20,7 @@ export const PROVIDERS = Object.freeze({
     keyEnv: "EXPERIENTIAL_LABS_API_KEY",
     supportsReasoning: true,
     reasoningParameter: "reasoning_effort",
-    defaultReasoningEffort: "high",
+    defaultReasoningEffort: "medium",
     freeLabel: "FREE",
     docsUrl: "https://platform.experientiallabs.ai/models",
   }),
@@ -59,70 +51,19 @@ function model(provider, id, name, options = {}) {
   });
 }
 
-// Experiential Labs free chat models checked on 2026-10-04 (JST).
-// The public catalog's current promotional list includes four chat-capable models;
-// Jev is excluded because Experiential documents it as a non-chat decision API.
-// The two daily free tiers have account eligibility and rate limits.
+// Active public free promotions, checked on 2026-10-09 (JST).
+// Paid-plan discounts and non-chat decision APIs are excluded.
+// Older daily tiers are not present in current model routes/promotion data.
 const EXPERIENTIAL_FREE_MODELS = Object.freeze([
   {
-    id: "glm-5.3-flash-abliterated",
-    name: "GLM-5.3 Flash Abliterated",
-    vision: true,
-    supportsTools: true,
-    supportsReasoning: true,
-    supportsTemperature: true,
-    freeLabel: "FREE promo",
-    note: "Listed as a free promotion in the current Experiential Labs model catalog; caps and availability may change.",
-  },
-  {
-    id: "gpt-6-luna",
-    name: "GPT-6 Luna",
-    vision: true,
-    supportsTools: true,
-    supportsReasoning: true,
-    supportsTemperature: true,
-    freeLabel: "FREE promo",
-    note: "Listed at $0 during the current Experiential Labs promotion; availability may change.",
-  },
-  {
-    id: "qwen3.8-27b",
-    name: "Qwen3.8 27B",
-    vision: true,
-    supportsTools: true,
-    supportsReasoning: true,
-    supportsTemperature: true,
-    freeLabel: "FREE promo",
-    note: "Listed at $0 during the current Experiential Labs promotion; availability may change.",
-  },
-  {
-    id: "deepseek-v4-flash",
-    name: "DeepSeek V4 Flash",
+    id: "qwen3.8-flash-next-uncensored",
+    name: "Qwen3.8 Flash Next Uncensored",
     vision: false,
     supportsTools: true,
     supportsReasoning: true,
     supportsTemperature: true,
     freeLabel: "FREE promo",
-    note: "Listed at $0 during the current Experiential Labs promotion; availability may change.",
-  },
-  {
-    id: "gpt-6-astra",
-    name: "GPT-6 Astra (daily tier)",
-    vision: true,
-    supportsTools: true,
-    supportsReasoning: true,
-    supportsTemperature: false,
-    freeLabel: "FREE daily*",
-    note: "Daily free tier requires a saved card and one settled $1+ charge; hourly and daily token allowances apply.",
-  },
-  {
-    id: "claude-fable-5.1",
-    name: "Claude Fable 5.1 (daily tier)",
-    vision: true,
-    supportsTools: true,
-    supportsReasoning: true,
-    supportsTemperature: false,
-    freeLabel: "FREE daily*",
-    note: "Daily free tier requires a saved card and one settled $1+ charge; hourly and daily token allowances apply.",
+    note: "無料プロモーション。時間・日次上限あり。画像非対応。上限後の課金はXPLのCredits overflow設定によります。",
   },
 ]);
 
@@ -140,7 +81,6 @@ const OPENROUTER_FREE_MODELS = Object.freeze([
   }],
   ["google/gemma-4-26b-a4b-it:free", "Gemma 4 26B A4B", { vision: true }],
   ["google/gemma-4-31b-it:free", "Gemma 4 31B", { vision: true }],
-  ["inclusionai/ling-3.0-flash-sante:free", "Ling 3.0 Flash Sante", {}],
   ["inclusionai/ling-3.1-flash", "Ling 3.1 Flash", {}],
   ["liquid/lfm-2.5-2.6b:free", "LFM2.5 2.6B", {}],
   ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "NVIDIA Nemotron 3 Nano Omni", { vision: true }],
@@ -160,12 +100,6 @@ const OPENROUTER_FREE_MODELS = Object.freeze([
     freeLabel: "FREE · 10/31",
     note: "OpenRouter model API lists this free endpoint through 2026-10-31.",
   }],
-  ["qwen/qwen3.8-27b:free", "Qwen3.8 27B", { vision: true }],
-  ["stealth/space-bunny-alpha", "Space Bunny Alpha", {
-    vision: true,
-    freeLabel: "FREE · 10/05",
-    note: "OpenRouter model API lists this free preview through 2026-10-05.",
-  }],
   ["thinkingmachines/inkling:free", "Inkling", { vision: true }],
   ["thinkingmachines/inkling-small:free", "Inkling Small", { vision: true }],
 ]);
@@ -179,20 +113,12 @@ export const MODEL_CATALOG = Object.freeze([
   model("groq", "openai/gpt-oss-120b", "GPT OSS 120B"),
   model("groq", "openai/gpt-oss-20b", "GPT OSS 20B"),
   model("groq", "openai/gpt-oss-safeguard-20b", "GPT OSS Safeguard 20B", { supportsTools: false }),
-  model("groq", "qwen/qwen3.6-27b", "Qwen3.6 27B", { vision: true }),
   model("groq", "qwen/qwen3.8-27b", "Qwen3.8 27B", { vision: true }),
-  model("groq", "groq/compound", "Groq Compound"),
-  model("groq", "groq/compound-mini", "Groq Compound Mini"),
 
-  // B.AI's current 0-Credit API offers.
-  model("bai", "glm-5.3-flash", "GLM-5.3 Flash", { vision: true }),
-  model("bai", "qwen3.8-flash", "Qwen3.8 Flash", { vision: true }),
-  model("bai", "mimo-v2.5", "MiMo-V2.5", { vision: true }),
-
-  // Experiential Labs promotional models and documented daily free tiers.
+  // Experiential Labs active free chat promotion.
   ...EXPERIENTIAL_MODEL_CATALOG,
 
-  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-04.
+  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-09.
   ...OPENROUTER_MODEL_CATALOG,
 ]);
 
