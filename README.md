@@ -29,6 +29,11 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - IndexedDB の Playground（作成、読込、差分編集、追記、検索、名前変更、削除、履歴、プレビュー）
 - `chart_render` による SVG の折れ線・棒グラフ
 - OpenRouter Web Search / Web Fetch Server Tool
+- X/Twitterの公開投稿を読む `x_read_post`（Web検索をONにして利用）
+  - 投稿URLを渡すと本文・投稿者・日時・取得できた引用・メディアURLを取得し、実行履歴に表示。通常の`web_fetch`に渡された投稿URLも同じ経路を使います
+  - [FxEmbedの公開API](https://github.com/FxEmbed/FxEmbed/wiki/Status-Fetch-API)をRenderから利用。XのAPIキー・ログインは不要ですが、投稿IDがこの第三者サービスに送られます
+  - 非公開・削除・取得制限には対応せず、スレッド全体や返信一覧は取得しません。画像・動画の内容解析は行いません。取得元の停止や制限で利用できない場合があります
+  - 成功結果は最大200件・60秒キャッシュ。一時的な取得障害は1回再試行します
 - OpenRouter 以外（Groq / Experiential Labs）でも使える汎用 Web検索
   - `/api/web-search`（Bing / DuckDuckGoを並列取得、必要時にLiteへフォールバック）と `/api/web-fetch` をサーバで実行
   - モデルからは `web_search` / `web_fetch` Function Tool として公開

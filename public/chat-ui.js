@@ -86,11 +86,18 @@ function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
     const state=activity?.status||(event?.ok===false?"failed":"done");row.node.dataset.state=state;
     row.glyph.textContent=state==="failed"?"!":state==="running"||state==="requested"?"◌":"✓";
     const args=event?.detail?.arguments||{};
-    const destination=args.path||args.query||activityDetailText(activity||{})||"";
+    const destination=args.path||args.query||args.url||activityDetailText(activity||{})||"";
     row.label.textContent=item.kind==="plan"?"計画":`${activity?activityCopy(activity.name,state):friendlyToolName(event?.name||"Tool")}${destination?` · ${destination}`:""}`;
     let html="";
     if(event){
       const result=toolEventResult(event);
+      if(result?.post){
+        const post=result.post;
+        html+=`<div class="xPostCard"><a href="${escapeHTML(safeResultUrl(post.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(post.author?.name||"")} @${escapeHTML(post.author?.handle||"")}</a><div class="xPostDate">${escapeHTML(post.created_at||"")}</div><div class="xPostText">${escapeHTML(post.text||"")}</div>`;
+        if(post.quote)html+=`<blockquote><a href="${escapeHTML(safeResultUrl(post.quote.url))}" target="_blank" rel="noopener noreferrer">@${escapeHTML(post.quote.author?.handle||"")}</a><div class="xPostText">${escapeHTML(post.quote.text||"")}</div></blockquote>`;
+        html+=(post.media||[]).map((media,index)=>`<a href="${escapeHTML(safeResultUrl(media.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(media.type||"メディア")} ${index+1}</a> `).join("")+`</div>`;
+        if(!row.autoOpened){row.node.open=true;row.autoOpened=true}
+      }
       if(result?.chart)html+=renderChartHTML(result.chart);
       if(event.name?.startsWith("plan_")&&msg.planSnapshot)html+=renderPlanCard(msg.planSnapshot);
       if(args.path)html+=`<button type="button" class="artifactLink" data-open-artifact="${escapeHTML(args.path)}">${escapeHTML(args.path)}</button>`;

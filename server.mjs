@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { normalizeSearchOptions, runSearch } from "./search.mjs";
+import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_KEY,
@@ -19,6 +20,7 @@ const publicDir = path.join(__dirname, "public");
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
+const readXPost = createXPostReader();
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20mb", strict: true }));
@@ -777,6 +779,19 @@ app.post("/api/web-search", async (req, res) => {
   }
 });
 
+async function sendXPost(req, res) {
+  try { parseXPostUrl(req.body?.url); }
+  catch (error) { return res.status(400).json({ error: { message: error.message, code: "invalid_x_post_url" }, proxy: true }); }
+  try { return res.json(await readXPost(req.body.url)); }
+  catch (error) { return res.status(502).json({ error: { message: redactSecrets(error.message), code: "x_post_unavailable" }, proxy: true }); }
+}
+
+app.post("/api/x-post", async (req, res) => {
+  const auth = authorizeRequest(req);
+  if (!auth.ok) return sendAuthError(res, auth);
+  return sendXPost(req, res);
+});
+
 app.post("/api/web-fetch", async (req, res) => {
   const auth = authorizeRequest(req);
   if (!auth.ok) return sendAuthError(res, auth);
@@ -795,6 +810,8 @@ app.post("/api/web-fetch", async (req, res) => {
     });
   }
   const maxChars = Math.min(Math.max(Number(req.body?.max_chars) || 12000, 500), 50000);
+  // X's ordinary HTML is a login/JS shell; public post URLs need structured data.
+  try { parseXPostUrl(url); return sendXPost(req, res); } catch { /* Ordinary page. */ }
 
   try {
     const response = await fetch(url, {

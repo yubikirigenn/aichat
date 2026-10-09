@@ -69,6 +69,16 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     await page.locator("#workspaceBtn").click();assert.equal(await page.locator(".chatPane").isVisible(),false);
     await page.locator("#closePlayBtn").click();assert.equal(await page.locator(".chatPane").isVisible(),true);
     await page.setViewportSize({width:1440,height:960});
+    await page.route("**/api/x-post",route=>route.fulfill({json:{ok:true,post:{url:"https://x.com/jack/status/20",text:"<script>untrusted</script>",author:{name:"jack",handle:"jack"},media:[]}}}));
+    const xTool=await page.evaluate(async()=>{
+      settings.web=true;
+      const registered=buildTools().some(t=>t.function?.name==="x_read_post");
+      const result=await executeTool({function:{name:"x_read_post",arguments:JSON.stringify({url:"https://x.com/jack/status/20"})}});
+      const message={role:"assistant",toolEvents:[{name:"x_read_post",ok:true,detail:{arguments:{url:result.post.url},result}}]};
+      const node=renderMessage(message);els.thread.appendChild(node);
+      const safe=node.querySelector(".xPostText").textContent==="<script>untrusted</script>"&&!node.querySelector(".xPostCard script");
+      node.remove();return registered&&result.ok&&safe;
+    });assert.equal(xTool,true);
     await page.evaluate(()=>{
       streamRound=async()=>new Promise((resolve,reject)=>abortController.signal.addEventListener("abort",()=>reject(new DOMException("Stopped","AbortError"))));
       els.prompt.value="停止テスト";void sendMessage();

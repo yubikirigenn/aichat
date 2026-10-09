@@ -29,6 +29,7 @@
 .executionDetail pre{font-size:12px;max-height:360px;overflow:auto;white-space:pre-wrap}
 .reasoningText{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px;line-height:1.7;max-height:360px;overflow:auto;overscroll-behavior:contain;user-select:text}
 .artifactLink{display:inline-block;margin:8px 0;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:5px 9px;color:var(--text);font-size:12px;cursor:pointer}
+.xPostCard{border:1px solid var(--line);border-radius:10px;padding:12px;color:var(--text);margin-bottom:10px}.xPostText{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.xPostDate{font-size:11px;color:var(--muted)}
 .turnFooter{margin-top:12px}.turnFooter .meta{font-size:11px}.turnFooter .pill{background:transparent;padding:0}.turnFooter .meta details{cursor:pointer}
 .turnFooter .meta summary{list-style:none}.turnFooter .meta details[open] summary{margin-bottom:6px}
 .planGoal,.planStep{font-size:13px}.planCount{font-size:12px}.playHead{height:auto;min-height:52px;flex-wrap:wrap;gap:8px;padding:10px 12px}.playTab{font-size:12px}.playTitle{font-size:13px}.closePlay{border:0;background:transparent;font-size:13px;color:var(--muted);padding:7px;cursor:pointer}
