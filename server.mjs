@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import { normalizeSearchOptions, runSearch, normalizeSearchQueries, runSearchBatch } from "./search.mjs";
 import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
 import { createXSearcher, normalizeXSearch } from "./x-search.mjs";
+import { readWebPage } from "./web-reader.mjs";
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_KEY,
@@ -166,10 +167,26 @@ function adaptProviderBody(provider, body, model = null) {
     if (enabled) adapted.reasoning_effort = provider.defaultReasoningEffort || "medium";
   }
   if (!supportsTemperature) delete adapted.temperature;
+  if (provider.id === "groq") {
+    const enabled = body.reasoning?.enabled === true;
+    delete adapted.reasoning; delete adapted.reasoning_effort;
+    delete adapted.reasoning_format; delete adapted.include_reasoning;
+    if (supportsReasoning && /^openai\/gpt-oss-(?:20b|120b)$/.test(adapted.model)) {
+      adapted.reasoning_effort = enabled ? "medium" : "low";
+      adapted.include_reasoning = enabled;
+    } else if (supportsReasoning && /^qwen\//.test(adapted.model)) {
+      adapted.reasoning_effort = enabled ? "medium" : "none";
+      adapted.reasoning_format = enabled ? "parsed" : "hidden";
+    }
+  }
   if (provider.id === "tokenharbor") {
+    // Model-default/automatic thinking is distinct from unsupported reasoning.
+    // Do not guess gateway controls or discard returned reasoning on tool turns.
+    delete adapted.reasoning; delete adapted.reasoning_effort;
     delete adapted.plugins; delete adapted.extra_body; delete adapted.service_tier;
     adapted.messages = (adapted.messages || []).map(message => {
       const { reasoning: _reasoning, reasoning_details: _details, ...rest } = message;
+      if (message.role === "assistant" && message.tool_calls?.length && /^(deepseek|mimo)-/.test(adapted.model) && message.reasoning) rest.reasoning_content = message.reasoning;
       return rest;
     });
   }
@@ -621,7 +638,7 @@ async function searchViaBing(query, maxResults, options, signal) {
     redirect: "follow",
     signal: signal || AbortSignal.timeout(6500),
   });
-  if (!response.ok) throw new Error(`Bing HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`Bing HTTP ${response.status}`), { upstream_status: response.status });
   const html = await response.text();
   return parseBingHtml(html, maxResults);
 }
@@ -692,7 +709,7 @@ async function searchViaDdgHtml(query, maxResults, options, signal) {
     redirect: "follow",
     signal: signal || AbortSignal.timeout(6500),
   });
-  if (!response.ok) throw new Error(`DuckDuckGo HTML HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`DuckDuckGo HTML HTTP ${response.status}`), { upstream_status: response.status });
   const html = await response.text();
   if (/anomaly|challenge|captcha/i.test(html) && !/result__a/i.test(html)) {
     throw new Error("DuckDuckGo HTML returned a challenge page");
@@ -708,7 +725,7 @@ async function searchViaDdgLite(query, maxResults, options, signal) {
     redirect: "follow",
     signal: signal || AbortSignal.timeout(6500),
   });
-  if (!response.ok) throw new Error(`DuckDuckGo Lite HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`DuckDuckGo Lite HTTP ${response.status}`), { upstream_status: response.status });
   const html = await response.text();
   return parseDdgLiteHtml(html, maxResults);
 }
@@ -813,6 +830,7 @@ app.post("/api/web-search", async (req, res) => {
       error: {
         message: `Web検索に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
         code: "web_search_failed",
+        retryable: error.retryable, backend_failures: error.backend_failures,
         details: error?.details?.map(detail => redactSecrets(detail)),
       },
       proxy: true,
@@ -868,29 +886,15 @@ app.post("/api/web-fetch", async (req, res) => {
   try { parseXPostUrl(url); return sendXPost(req, res); } catch { /* Ordinary page. */ }
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
+    const response = await readWebPage(url, {
+      validateUrl: target => { if (isPrivateOrLocalUrl(target)) throw Object.assign(new Error("Local or private URLs cannot be fetched"), { code: "blocked_url" }); },
       headers: {
         "User-Agent": SEARCH_UA,
         Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
         "Accept-Language": "ja,en-US;q=0.8,en;q=0.6",
       },
-      redirect: "follow",
-      signal: AbortSignal.timeout(25000),
     });
-    const contentType = response.headers.get("content-type") || "";
-    const raw = await response.text();
-    if (!response.ok) {
-      return res.status(502).json({
-        error: {
-          message: `Fetch failed: HTTP ${response.status}`,
-          code: "web_fetch_failed",
-        },
-        url,
-        status: response.status,
-        proxy: true,
-      });
-    }
+    const { contentType, raw } = response;
 
     let title = "";
     let content = "";
@@ -909,6 +913,7 @@ app.post("/api/web-fetch", async (req, res) => {
       content,
       content_type: contentType,
       status: response.status,
+      final_url: response.final_url, attempts: response.attempts,
       retrieved_at: new Date().toISOString(),
     });
   } catch (error) {
@@ -918,7 +923,9 @@ app.post("/api/web-fetch", async (req, res) => {
         message: timedOut
           ? "URLの取得がタイムアウトしました。"
           : `URLの取得に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
-        code: timedOut ? "web_fetch_timeout" : "web_fetch_failed",
+        code: error.code || (timedOut ? "web_fetch_timeout" : "web_fetch_failed"),
+        upstream_status: error.upstream_status, network_code: error.network_code,
+        retryable: error.retryable, attempts: error.attempts, next_action: error.next_action,
       },
       url,
       proxy: true,

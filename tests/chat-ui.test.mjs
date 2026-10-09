@@ -53,6 +53,10 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     assert.equal(await page.evaluate(()=>buildTools().some(t=>t.function?.name==="web_search")),true);
     assert.equal(await page.evaluate(()=>buildTools().some(t=>t.type==="openrouter:web_search")),false);
     await page.locator("#quickModel").selectOption(previousModel);
+    await page.route("**/api/chat",route=>{
+      const body=route.request().postDataJSON();assert.equal(body.stream,false);assert.equal(body.tools,undefined);
+      return route.fulfill({json:{choices:[{message:{content:"日時の動作確認"}}]}});
+    });
     await page.evaluate(async()=>{
       let round=0;
       streamRound=async(messages,forced,onUpdate)=>{
@@ -62,6 +66,8 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       };
       document.querySelector("#prompt").value="テスト";await sendMessage();
     });
+    await page.waitForFunction(()=>activeChat().aiTitleGenerated===true);
+    assert.equal(await page.locator("#chatTitle").textContent(),"日時の動作確認");
     assert.equal(await page.locator(".timelineText").count(),2);
     assert.equal(await page.locator(".reasoningText").count(),2);
     assert.equal(await page.locator(".executionRow.activity").count(),1);

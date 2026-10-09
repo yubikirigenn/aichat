@@ -26,6 +26,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 - クリップボード画像の貼り付け、画像ファイル添付、画像プレビュー
 - OpenAI互換のマルチモーダル`messages[].content`による画像送信
 - ストリーミング回答と展開可能な Thinking 表示
+- 最初の回答後、選択中の同じモデルで会話タイトルを非同期生成。タイトル専用に最初の質問・回答の抜粋を1回追加送信するため、無料枠を消費します。画像やツールは送らず、失敗時は仮タイトルを維持します。既存チャットは次の回答後が対象です
 - Agent Activity（推論、Planner、Playground、グラフ、Web Search の状態）
 - Planner の計画作成・更新・完了
 - IndexedDB の Playground（作成、読込、差分編集、追記、検索、名前変更、削除、履歴、プレビュー）
@@ -46,6 +47,8 @@ Render からそのまま公開できる、画像入力とワークスペース�
   - 有効な検索結果が届いたら追加200msだけ別エンジンの結果を集約し、遅い通信をキャンセル。1秒間有効結果がなければLiteを先行開始し、1クエリ全体の待ち時間を6.5秒に制限します。結果の `elapsed_ms` / `backend_timings` / `partial` / `deadline_reached` で時間・一部返却を確認できます。絞り込みは緩めません
   - 複数クエリは全件完了後に返します（3並列・最大6件）。全エンジンの取得完了前に返す場合は網羅性が下がり得ます。OpenRouter標準Server Toolの検索時間にはこの制御は適用されません
   - モデルからは `web_search` / `web_fetch` Function Tool として公開
+  - 検索先の一時的なHTTP・接続障害は1回だけ再試行（上記6.5秒の上限内）。429はその場で再試行しません。失敗時もHTTP状態・接続エラー・再試行可能性をTool結果に保持し、モデルが原因に応じて次の操作を選べます
+  - ページ読取は1試行10秒・最大2試行。リダイレクト先にもローカルURL検査を適用し、本文は2MBまで。403など恒久的な拒否は繰り返さず、429は時間を置くよう案内します。取得先のアクセス制限を回避する機能ではなく、Renderからの接続成功は保証しません
 - 検索の詳細絞り込み（OpenRouterでもFunction Toolとして利用可能）
   - 対象・除外ドメイン、完全一致フレーズ、除外語、ファイル形式、直近1日／1週／1か月／1年、言語・地域
   - ドメイン・形式・除外語はサーバでも検査。言語・地域・期間・完全一致は検索先への指定で、厳密な本文一致や公開日は保証しません
@@ -64,7 +67,9 @@ OpenRouterは、Models APIで入力・出力料金がともに$0のチャット�
 
 ## Render への設定
 
-Token Harborは2026-10-10 JSTに[公式Free一覧](https://www.tokenharbor.ai/models?category=free)で確認した `claude-haiku-5.5:free`（期間限定）、`deepseek-v4.1-flash:free`、`mimo-v2.6-flash:free` の3ルートのみ登録しています。すべて画像入力あり。音声・動画・ファイル入力はこのアプリでは未対応です。[OpenAI互換API](https://www.tokenharbor.ai/docs/api/curl)へサーバーから接続します。Thinkingの明示パラメーターは確認できないため送らず、モデルから返された思考表示は残します。Function Toolの実利用はアカウント・ルートの対応に依存します。
+Token Harborは2026-10-10 JSTに[公式Free一覧](https://www.tokenharbor.ai/models?category=free)で確認した `claude-haiku-5.5:free`（期間限定）、`deepseek-v4.1-flash:free`、`mimo-v2.6-flash:free` の3ルートのみ登録しています。すべて画像入力あり。音声・動画・ファイル入力はこのアプリでは未対応です。[OpenAI互換API](https://www.tokenharbor.ai/docs/api/curl)へサーバーから接続します。Thinkingは「非対応」ではなくモデルの自動設定として扱い、返された内容を表示します。ゲートウェイでの明示ON/OFFは未確認のため、未確認パラメーターは送りません（画面の設定で強制ON/OFFできる保証はありません）。DeepSeek・MiMoのTool継続時は返された推論を `reasoning_content` として保持します。Function Toolの実利用はアカウント・ルートの対応に依存します。
+
+GroqのThinkingは[公式仕様](https://console.groq.com/docs/reasoning)に合わせてモデル別に指定します。GPT-OSSは `reasoning_effort` と `include_reasoning`、Qwenは `reasoning_effort` と `reasoning_format` を使用し、非対応モデルには送りません。GPT-OSSのOFFは推論の完全停止ではなく、低いeffortと推論表示の非表示です。これらのリクエスト形式はモックで検証し、実モデルの生成品質は未検証です。
 
 [無料アクセス条件](https://www.tokenharbor.ai/docs/billing/cashback)では、`:free`ルートは残高に課金せず、無料枠には利用上限があります。無料モデルを有効化すると入力・出力が保存される場合があるため、Token Harborのダッシュボードで条件を確認・有効化後、`TOKENHARBOR_FREE_ACCESS_CONFIRMED=true` を設定してください。この値は管理者の確認記録であり、上流の条件を自動検証するものではありません。期間終了・枠超過時に有料IDへ自動変更しません。
 

@@ -14,7 +14,9 @@ export async function runSearchBatch(queries, search, concurrency = 3) {
       const index = cursor++; if (index >= queries.length) return;
       const query = queries[index];
       try { const { errors = [], ...result } = await search(query); searches[index] = { query, ok: true, ...result, warnings: errors }; }
-      catch { searches[index] = { query, ok: false, results: [], error: "検索先で失敗しました。このクエリだけ修正・再試行してください。" }; }
+      catch (error) { searches[index] = { query, ok: false, results: [], error: "検索先で失敗しました。失敗理由に応じて検索先・クエリを見直してください。", code: "web_search_failed", retryable: error.retryable === true, backend_failures: error.backend_failures || [],
+        details: Array.isArray(error.details) ? error.details.map(detail => String(detail).slice(0, 300)).slice(0, 4) : [],
+      }; }
     }
   }));
   const merged = new Map();
@@ -133,7 +135,7 @@ export async function runSearch(backends, query, maxResults, options, policy = {
   const batches = [], errors = [];
   const searchQuery = buildSearchQuery(query, options);
   const started = performance.now(), controller = new AbortController();
-  const timings = [], timers = [];
+  const timings = [], timers = [], failures = [];
   let closed = false, pending = 0, primaryPending = 0, fallbackStarted = false, settling = false;
   let deadlineReached = false, unfinished = 0;
   await new Promise(resolve => {
@@ -164,15 +166,30 @@ export async function runSearch(backends, query, maxResults, options, policy = {
       if (primary) primaryPending += group.length;
       for (const backend of group) {
         const at = performance.now();
-        Promise.resolve().then(() => backend.run(searchQuery, Math.min(20, maxResults * 3), options, controller.signal)).then(value => {
+        let attempts = 0;
+        const request = async () => {
+          for (;;) {
+            controller.signal.throwIfAborted(); attempts++;
+            try { return await backend.run(searchQuery, Math.min(20, maxResults * 3), options, controller.signal); }
+            catch (error) {
+              const transient = [408, 425, 500, 502, 503, 504].includes(Number(error?.upstream_status)) || /^(EAI_AGAIN|ECONNRESET|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)$/.test(String(error?.cause?.code || ""));
+              if (!transient || attempts >= 2 || controller.signal.aborted) throw error;
+              await new Promise(resolve => setTimeout(resolve, 150));
+            }
+          }
+        };
+        Promise.resolve().then(request).then(value => {
           if (closed) return;
           batches.push({ id: backend.id, results: value });
           if (!value.length) errors.push(`${backend.id}: 0 results`);
-          timings.push({ provider: backend.id, elapsed_ms: Math.round(performance.now() - at), status: value.length ? "ok" : "empty" });
+          timings.push({ provider: backend.id, attempts, elapsed_ms: Math.round(performance.now() - at), status: value.length ? "ok" : "empty" });
         }, error => {
           if (closed) return;
           errors.push(`${backend.id}: ${error?.message || "failed"}`);
-          timings.push({ provider: backend.id, elapsed_ms: Math.round(performance.now() - at), status: "failed" });
+          const status = Number(error?.upstream_status || 0), network = String(error?.cause?.code || "");
+          failures.push({ provider: backend.id, upstream_status: status || undefined, network_code: network || undefined,
+            retryable: [408, 425, 429, 500, 502, 503, 504].includes(status) || /^(EAI_AGAIN|ECONNRESET|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)$/.test(network) });
+          timings.push({ provider: backend.id, attempts, elapsed_ms: Math.round(performance.now() - at), status: "failed" });
         }).finally(() => {
           if (closed) return;
           pending--; if (primary) primaryPending--;
@@ -187,11 +204,12 @@ export async function runSearch(backends, query, maxResults, options, policy = {
   });
   const results = rankSearchResults(batches, query, options, maxResults);
   if (deadlineReached) errors.push("検索の時間上限に達しました。取得済みの結果を返します。");
-  if (!batches.length) { const error = new Error("All search backends failed"); error.details = errors; throw error; }
+  if (!batches.length) { const error = new Error("All search backends failed"); error.details = errors; error.backend_failures = failures; error.retryable = deadlineReached || failures.some(f => f.retryable); throw error; }
   return {
     results, provider: batches.filter(b => b.results.length).map(b => b.id).join("+") || "none",
     elapsed_ms: Math.round(performance.now() - started), backend_timings: timings,
     partial: unfinished > 0, deadline_reached: deadlineReached,
+    backend_failures: failures,
     errors, search_query: searchQuery, filters: options,
     filter_notes: ["言語・地域は検索先への優先指定です。期間は検索先のインデックス基準で、公開日を保証しません。", "関連性はタイトル・抜粋・URLの語句一致による補助判定です。本文の確認にはweb_fetchを使ってください。"],
     ...(results.length ? {} : { recovery_hint: "条件に合う結果がありません。主要語を短く言い換えるか、ユーザーの必須条件を維持したまま任意の絞り込みを見直してください。" }),

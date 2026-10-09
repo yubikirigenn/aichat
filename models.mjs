@@ -8,8 +8,8 @@ export const PROVIDERS = Object.freeze({
   tokenharbor: Object.freeze({
     id: "tokenharbor", label: "Token Harbor",
     baseUrl: "https://tokenharbor.ai/v1", keyEnv: "TOKENHARBOR_API_KEY",
-    // No documented cross-model thinking control; retain returned summaries.
-    supportsReasoning: false,
+    // Gateway-specific controls are not documented; keep model-default thinking.
+    supportsReasoning: true,
     freeLabel: "FREE · 枠制限あり", docsUrl: "https://www.tokenharbor.ai/docs/billing/cashback",
   }),
   gemini: Object.freeze({
@@ -24,7 +24,7 @@ export const PROVIDERS = Object.freeze({
     label: "Groq",
     baseUrl: "https://api.groq.com/openai/v1",
     keyEnv: "GROQ_API_KEY",
-    supportsReasoning: false,
+    supportsReasoning: true,
     freeLabel: "Free plan枠",
     docsUrl: "https://console.groq.com/docs/rate-limits",
   }),
@@ -60,6 +60,7 @@ function model(provider, id, name, options = {}) {
     outputModalities: options.outputModalities || ["text"],
     supportsTools: options.supportsTools !== false,
     supportsReasoning: options.supportsReasoning !== false,
+    ...(options.reasoningMode ? { reasoningMode: options.reasoningMode } : {}),
     supportsTemperature: options.supportsTemperature !== false,
     freeLabel: options.freeLabel || PROVIDERS[provider].freeLabel,
     note: options.note || "",
@@ -129,8 +130,8 @@ export const MODEL_CATALOG = Object.freeze([
     ["deepseek-v4.1-flash:free", "DeepSeek V4.1 Flash", "無料枠の対象ルートです。"],
     ["mimo-v2.6-flash:free", "MiMo V2.6 Flash", "無料枠の対象ルートです。"],
   ].map(([id, name, note]) => model("tokenharbor", id, name, {
-    vision: true, supportsReasoning: false,
-    note: `${note} Token Harbor側で無料モデルを有効化してください。無料ルートでは入力・出力が保存される場合があります。Thinkingの明示設定は送らず、返された内容のみ表示します。`,
+    vision: true, reasoningMode: "automatic",
+    note: `${note} Token Harbor側で無料モデルを有効化してください。無料ルートでは入力・出力が保存される場合があります。Thinkingはモデルの自動設定を使用し、返された内容を表示します。ゲートウェイでの強制ON/OFFは未確認です。`,
   })),
   ...["3.8-flash", "3.7-flash", "3.6-flash", "3.5-flash", "3.5-flash-lite", "3.1-flash-lite", "2.5-pro", "2.5-flash", "2.5-flash-lite"].map(version =>
     model("gemini", `gemini-${version}`, `Gemini ${version.replace(/-/g, " ")}`, {
@@ -139,7 +140,7 @@ export const MODEL_CATALOG = Object.freeze([
   // Groq Free Plan Limits: chat-capable models from the current catalog.
   model("groq", "openai/gpt-oss-120b", "GPT OSS 120B"),
   model("groq", "openai/gpt-oss-20b", "GPT OSS 20B"),
-  model("groq", "openai/gpt-oss-safeguard-20b", "GPT OSS Safeguard 20B", { supportsTools: false }),
+  model("groq", "openai/gpt-oss-safeguard-20b", "GPT OSS Safeguard 20B", { supportsTools: false, supportsReasoning: false }),
   model("groq", "qwen/qwen3.8-27b", "Qwen3.8 27B", { vision: true }),
 
   // Suspended Experiential Labs selection (not an assertion of free billing).

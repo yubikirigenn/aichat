@@ -68,6 +68,21 @@ test("irrelevant/failed first engines trigger fallback; zero matches return reco
 });
 
 // Exercise existing HTML parsers with fixtures, without starting a server.
+test("transient backend failures recover once within the same search deadline",async()=>{
+  let calls=0;
+  const response=await runSearch([{id:"engine",run:async()=>{
+    if(++calls===1)throw Object.assign(new Error("HTTP 503"),{upstream_status:503});
+    return [result("https://render.com/node")];
+  }}],"Render",5,options({}));
+  assert.equal(calls,2);assert.equal(response.results.length,1);assert.equal(response.backend_timings[0].attempts,2);
+});
+test("batch search retains backend failure status without misclassifying permanent errors",async()=>{
+  const {runSearchBatch}=await import("../search.mjs");
+  const response=await runSearchBatch(["Render"],q=>runSearch([{id:"engine",run:async()=>{throw Object.assign(new Error("HTTP 403"),{upstream_status:403})}}],q,5,options({})));
+  assert.equal(response.searches[0].retryable,false);
+  assert.equal(response.searches[0].backend_failures[0].upstream_status,403);
+  assert.match(response.searches[0].details[0],/403/);
+});
 test("useful fast results return without waiting for stalled engines, cancelling losers", async () => {
   let slowSignal, fallbackRan = false;
   const response = await runSearch([

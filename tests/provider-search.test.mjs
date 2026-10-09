@@ -28,6 +28,22 @@ test("batch runs three queries concurrently, preserves partial success and merge
 const server=readFileSync(new URL("../server.mjs",import.meta.url),"utf8");
 const adapter=server.slice(server.indexOf("function adaptProviderBody("),server.indexOf("async function providerFetch("));
 const adapt=runInNewContext(adapter+";adaptProviderBody");
+test("Groq uses model-specific thinking controls for ON and OFF",()=>{
+  for(const model of MODEL_CATALOG.filter(m=>m.provider==="groq"))for(const enabled of [true,false]){
+    const result=adapt(PROVIDERS.groq,{model:model.id,reasoning:{enabled},reasoning_format:"raw",include_reasoning:true},model);
+    assert.equal(result.reasoning,undefined);
+    if(model.id.includes("safeguard")){assert.equal(result.reasoning_effort,undefined);assert.equal(result.include_reasoning,undefined)}
+    else if(model.id.startsWith("openai/")){assert.equal(result.reasoning_effort,enabled?"medium":"low");assert.equal(result.include_reasoning,enabled);assert.equal(result.reasoning_format,undefined)}
+    else{assert.equal(result.reasoning_effort,enabled?"medium":"none");assert.equal(result.reasoning_format,enabled?"parsed":"hidden");assert.equal(result.include_reasoning,undefined)}
+  }
+});
+test("Token Harbor automatic reasoning is not marked unsupported and survives tool rounds",()=>{
+  for(const model of MODEL_CATALOG.filter(m=>m.provider==="tokenharbor")){
+    assert.equal(model.supportsReasoning,true);assert.equal(model.reasoningMode,"automatic");
+    const result=adapt(PROVIDERS.tokenharbor,{model:model.id,messages:[{role:"assistant",reasoning:"model summary",tool_calls:[{id:"a"}]}]},model);
+    assert.equal(result.messages[0].reasoning_content,/^(deepseek|mimo)-/.test(model.id)?"model summary":undefined);
+  }
+});
 test("Token Harbor requires free access opt-in and rejects paid base IDs",()=>{
   const source=server.slice(server.indexOf("function providerAccess("),server.indexOf("function redactSecrets("));
   const env={TOKENHARBOR_API_KEY:"thk_live_test"};
