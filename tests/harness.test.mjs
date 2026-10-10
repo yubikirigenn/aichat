@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const source=readFileSync(new URL("../public/harness.js",import.meta.url),"utf8");
-const h=runInNewContext(source+";({isTaskClosure,createInvestigationTracker,runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,observationText,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
+const h=runInNewContext(source+";({createInvestigationTracker,runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,observationText,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
 const call=(name,id)=>({id,function:{name,arguments:JSON.stringify({id})}});
 const operation=(name,args)=>({function:{name,arguments:JSON.stringify(args)}});
 test("investigation detects renamed result refs and overlapping read ranges without penalizing new source ranges",()=>{
@@ -47,10 +47,6 @@ test("edited content and saved evidence survive continuation; no-op writes do no
   assert.equal(tracker.finishRound(),"redirect");
   tracker.observe(read,{path:"app.js",content:"new"});assert.equal(tracker.finishRound(),"continue");
   tracker.observe(operation("workspace_edit_file",{}),{ok:true,changed:true});assert.equal(tracker.finishRound(),"continue");
-});
-test("explicit task closure is distinct from questions and quotations",()=>{
-  for(const text of ["もう大丈夫です","ありがとう、もう大丈夫ですよ。","実装は終わったんじゃ?もう大丈夫ですよ","作業を終了してください"])assert.equal(h.isTaskClosure(text),true,text);
-  for(const text of ["もう大丈夫ですか？","もう大丈夫ですよと言われました","まだ直っていません","続けて","『もう大丈夫です』という文を消して","表示する文はもう大丈夫です"])assert.equal(h.isTaskClosure(text),false,text);
 });
 test("raw source ranges preserve literal newlines and quotes; metadata requires JSON view",()=>{
   const content='function start() {\n  const quote = "value";\n}\n';

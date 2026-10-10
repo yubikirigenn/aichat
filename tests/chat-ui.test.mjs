@@ -56,7 +56,11 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
         transaction.oncomplete=()=>{db.close();resolve()};
       };
     }));
-    await page.goto("http://127.0.0.1:31302");await page.waitForFunction(()=>!!document.querySelector("#quickModel option"));
+    await page.evaluate(()=>localStorage.setItem("nemotron_workspace_chats_v1",JSON.stringify([{id:"legacy-history",title:"移行対象",messages:[{role:"user",content:"以前の質問"},{role:"assistant",content:"",timeline:[{kind:"text",text:"以前の途中説明"}],toolEvents:[]}]}])));
+    await page.goto("http://127.0.0.1:31302");await page.waitForFunction(()=>chatHistoryReady&&!!document.querySelector("#quickModel option"));
+    assert.equal(await page.evaluate(()=>chats.find(c=>c.id==="legacy-history").messages[1].timeline[0].text),"以前の途中説明");
+    assert.equal(await page.evaluate(async()=>(await dbReq(tx(CHAT_STORE).get("current"))).chats[0].id),"legacy-history");
+    await page.evaluate(()=>createChat());
     const searchCatalog=await page.request.get("http://127.0.0.1:31302/api/models");
     assert.equal((await searchCatalog.json()).webSearch.provider,"tavily");
     assert.equal(await page.evaluate(()=>webSearchProvider),"tavily");
@@ -70,7 +74,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     const favicon=await page.request.get("http://127.0.0.1:31302/favicon.svg");
     assert.equal(favicon.status(),200);assert.match(favicon.headers()["content-type"],/image\/svg\+xml/);
     assert.match(await favicon.text(),/viewBox="0 0 64 64"/);
-    await page.waitForFunction(()=>db?.version===2);
+    await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
     assert.equal(await page.evaluate(async()=>(await getFile("kept.txt")).content),"preserved");
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     const previousModel=await page.locator("#quickModel").inputValue();
@@ -185,7 +189,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     const downloadPromise=page.waitForEvent("download");
     await page.locator("[data-result-download]").first().evaluate(button=>button.click());
     assert.ok((await downloadPromise).suggestedFilename().startsWith("result-"));
-    await page.reload();await page.waitForFunction(()=>db?.version===2);
+    await page.reload();await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     assert.equal(await page.evaluate(async ref=>(await getStoredObservation(ref,activeChat().id)).text.includes("NEEDLE"),generation.first_ref),true);
     page.once("dialog",dialog=>dialog.dismiss());
@@ -249,7 +253,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     });
     assert.equal(await page.evaluate(()=>activeChat().resumeState.status),"interrupted");
     assert.equal(await page.evaluate(()=>activeChat().resumeState.operations.some(op=>op.name==="workspace_write_file"&&op.status==="completed")),true);
-    await page.reload();await page.waitForFunction(()=>db?.version===2);
+    await page.reload();await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
     const resumed=await page.evaluate(async()=>{
       document.querySelector("#settingsDialog").close();setApiKey("test-password",false);
       let context="";
@@ -271,11 +275,12 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     assert.equal(stagnation.rounds,7);assert.equal(stagnation.redirected,true);assert.equal(stagnation.finalized,true);
     assert.match(stagnation.content,/開始画面/);assert.equal(stagnation.state,"interrupted");
     const closure=await page.evaluate(async()=>{
-      let requested=false;streamRound=async()=>{requested=true;throw new Error("must not resume old work")};
+      let requested=false,hasHistory=false;
+      streamRound=async messages=>{requested=true;hasHistory=messages.some(m=>typeof m.content==="string"&&m.content.includes("保存された実行記録"));return {msg:{role:"assistant",content:"モデルによる終了への返答"}}};
       els.prompt.value="実装は終わったんじゃ?もう大丈夫ですよ";await sendMessage();
-      return {requested,state:activeChat().resumeState,content:activeChat().messages.at(-1).content};
+      return {requested,hasHistory,state:activeChat().resumeState,content:activeChat().messages.at(-1).content};
     });
-    assert.equal(closure.requested,false);assert.equal(closure.state,undefined);assert.match(closure.content,/作業はここで終了/);
+    assert.equal(closure.requested,true);assert.equal(closure.hasHistory,true);assert.equal(closure.state,undefined);assert.equal(closure.content,"モデルによる終了への返答");
     const savedNotes=await page.evaluate(async()=>{
       let round=0;streamRound=async()=>{
         if(++round===1)return {msg:{role:"assistant",content:"",tool_calls:[{id:"notes",function:{name:"task_checkpoint",arguments:JSON.stringify({findings:["script loading confirmed"],ruled_out:["syntax problem"],next_steps:["inspect runtime"]})}}]}};
@@ -285,7 +290,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       return activeChat().resumeState.notes;
     });
     assert.deepEqual(savedNotes.findings,["script loading confirmed"]);
-    await page.reload();await page.waitForFunction(()=>db?.version===2);
+    await page.reload();await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
     assert.equal(await page.evaluate(()=>resumeContext(activeChat()).includes("inspect runtime")),true);
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     // A valid reasoning-only completion gets one bounded continuation, never a
@@ -349,6 +354,40 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     await frame.locator("#startBtn").click();
     assert.equal(await frame.locator("#status").textContent(),"deferred");
     assert.equal(await page.evaluate(()=>previewDiagnostics.missing.includes("missing.js")),true);
+    // History beyond localStorage capacity survives reload without dropping
+    // older messages. Empty final text still carries narration and edit proof.
+    await page.evaluate(async()=>{
+      chats.push({id:"large-history",title:"large",messages:[...Array.from({length:70},(_,i)=>({role:"user",content:"old-"+i})),{role:"assistant",content:"L".repeat(6000000),images:[{dataUrl:"data:image/png;base64,AAAA"}]}]});
+      const chat=activeChat();chat.messages.push({role:"assistant",content:"",timeline:[{kind:"text",text:"原因はgame.jsの読込順でした。"}],toolEvents:[{name:"workspace_edit_file",ok:true,detail:{arguments:{path:"index.html",replacements:[{old_text:'src="game.js"',new_text:'defer src="game.js"'}]},result:{ok:true,changed:true}}}],workNotes:{findings:["load order confirmed"]}});
+      await persistChats();
+    });
+    await page.reload();await page.waitForFunction(()=>chatHistoryReady);
+    const history=await page.evaluate(async()=>{
+      document.querySelector("#settingsDialog").close();setApiKey("test-password",false);
+      const large=chats.find(c=>c.id==="large-history"),chat=activeChat(),index=chat.messages.length-1;
+      const read=await executeTool({function:{name:"chat_history_read",arguments:JSON.stringify({start:index,count:1,limit:6000})}});
+      const context=apiMessages(chat).map(m=>typeof m.content==="string"?m.content:"").join("\n");
+      let causeContext="";streamRound=async messages=>{causeContext=messages.map(m=>typeof m.content==="string"?m.content:"").join("\n");return {msg:{role:"assistant",content:"保存済みの変更記録を確認しました。"}}};
+      els.prompt.value="何が原因だった？";await sendMessage();
+      return {count:large.messages.length,length:large.messages.at(-1).content.length,image:large.messages.at(-1).images[0].dataUrl,read:read.messages[0].content,context,causeContext,saveError:chatSaveError};
+    });
+    assert.equal(history.count,71);assert.equal(history.length,6000000);assert.equal(history.image,"data:image/png;base64,AAAA");assert.equal(history.saveError,"");
+    for(const text of [history.read,history.context,history.causeContext]){assert.match(text,/読込順/);assert.match(text,/defer/);assert.match(text,/load order confirmed/)}
+    await page.evaluate(()=>{
+      streamRound=async(messages,forced,onUpdate)=>{
+        onUpdate({role:"assistant",content:"進行中の途中説明を保存",reasoning:"保存されるThinking",tool_calls:[]});
+        await persistChats();return new Promise(()=>{});
+      };
+      els.prompt.value="途中保存の検証";void sendMessage();
+    });
+    await page.waitForFunction(async()=>{
+      const record=await dbReq(tx(CHAT_STORE).get("current"));
+      return record.chats.find(c=>c.id===activeChatId)?.messages.at(-1)?.content==="進行中の途中説明を保存";
+    });
+    page.once("dialog",dialog=>dialog.accept());
+    await page.reload();await page.waitForFunction(()=>chatHistoryReady);
+    const partial=await page.evaluate(()=>({message:activeChat().messages.at(-1),context:messageHistoryText(activeChat().messages.at(-1)),state:activeChat().resumeState.status}));
+    assert.equal(partial.message.content,"進行中の途中説明を保存");assert.equal(partial.message.reasoning,"保存されるThinking");assert.equal(partial.message._streaming,false);assert.match(partial.context,/途中説明/);assert.match(partial.message.error,/保存済みの途中経過/);assert.equal(partial.state,"interrupted");
     // The intentional iframe exception is expected; every other page error fails.
     assert.ok(errors.every(error=>error.includes("runtime fixture")));
     assert.equal(errors.filter(error=>error.includes("runtime fixture")).length,1);

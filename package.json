@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
-    "check": "node --check server.mjs && node --check models.mjs && node --check search.mjs && node --check tavily-search.mjs && node --check web-reader.mjs && node --check x-post.mjs && node --check x-search.mjs && node --check public/chat-ui.js && node --check public/harness.js",
+    "check": "node --check server.mjs && node --check models.mjs && node --check search.mjs && node --check tavily-search.mjs && node --check web-reader.mjs && node --check x-post.mjs && node --check x-search.mjs && node --check public/chat-ui.js && node --check public/harness.js && node --check public/history.js",
     "test": "node --test"
   },
   "engines": {

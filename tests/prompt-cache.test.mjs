@@ -8,12 +8,13 @@ import {PROVIDERS,MODEL_CATALOG} from "../models.mjs";
 
 const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
 const harness=readFileSync(new URL("../public/harness.js",import.meta.url),"utf8");
+const history=readFileSync(new URL("../public/history.js",import.meta.url),"utf8");
 const ui=readFileSync(new URL("../public/chat-ui.js",import.meta.url),"utf8");
 const server=readFileSync(new URL("../server.mjs",import.meta.url),"utf8");
 const plain=value=>JSON.parse(JSON.stringify(value));
 function promptHarness(webSearchProvider="legacy"){
   let omitted=0;
-  const fn=runInNewContext(html.slice(html.indexOf("function buildSystemPrompt("),html.indexOf("function makeLegacyWebPlugin("))+";({apiMessages,buildTools})",{
+  const fn=runInNewContext(history+html.slice(html.indexOf("function buildSystemPrompt("),html.indexOf("function makeLegacyWebPlugin("))+";({apiMessages,buildTools})",{
     settings:{web:true,webResults:5,webMaxCalls:4,systemPrompt:"追加の固定指示"},
     functionTools:[{type:"function",function:{name:"current_datetime"}}],webFunctionTools:[{type:"function",function:{name:"web_search"}}],
     selectedModel:()=>({provider:"openrouter"}),clamp:(x,min,max)=>Math.min(max,Math.max(min,x)),

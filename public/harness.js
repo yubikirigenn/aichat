@@ -6,10 +6,6 @@ function stableToolKey(call) {
   return `${call.function?.name}:${args}`;
 }
 function toolFailed(call,result) { return result?.ok===false||(call.function?.name==="web_search"&&Number(result?.count??result?.results?.length??0)===0); }
-function isTaskClosure(text) {
-  const last=text.trim().replace(/[。！!\s]+$/g,"").split(/[。！？?!\n]/).at(-1).trim().replace(/^(?:はい|ありがとう(?:ございます)?)[、,]\s*/,"");
-  return /^(?:もう大丈夫(?:です(?:よ)?|だよ)?|ここまでで(?:大丈夫|結構)(?:です)?|作業を(?:終了|停止)してください|これ以上の作業は不要(?:です)?)$/.test(last);
-}
 function evidenceHash(text) {
   let a=2166136261,b=5381;
   for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);a=Math.imul(a^c,16777619);b=Math.imul(b,33)^c}
