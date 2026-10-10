@@ -116,15 +116,17 @@ function parseErrorBody(text, status, providerLabel = "OpenRouter") {
   }
 
   const nested = parsed?.error;
+  const html = /^\s*(?:<!doctype\s+html|<html\b)/i.test(text || "");
   const message =
     nested?.message ||
     parsed?.message ||
-    (text && text.trim()) ||
+    (!html && text && text.trim()) ||
     `${providerLabel} が HTTP ${status} を返しました。`;
 
   return {
     message: redactSecrets(message).slice(0, 1200),
     code: nested?.code || parsed?.code || status,
+    retryable: [502, 503, 504].includes(status),
     metadata: nested?.metadata || undefined,
   };
 }
@@ -154,6 +156,7 @@ function sendAuthError(res, auth) {
     error: {
       message: authFailureMessage(auth.reason, auth.provider),
       code: auth.reason,
+      retryable: false,
     },
     proxy: true,
   });
@@ -352,6 +355,9 @@ app.post("/api/chat", async (req, res) => {
     res.flushHeaders();
     // Send an SSE comment immediately so proxies flush the stream before the first token.
     res.write(": stream-open\n\n");
+    const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(": keep-alive\n\n"); }, 15000);
+    heartbeat.unref();
+    res.once("close", () => clearInterval(heartbeat));
 
     if (upstream.body) {
       Readable.fromWeb(upstream.body).on("error", (error) => {
@@ -981,6 +987,9 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-app.listen(port, () => {
+const httpServer = app.listen(port, () => {
   console.log(`Nemotron Workspace listening on port ${port}`);
 });
+// Keep the backend connection alive long enough for Render's reverse proxy.
+httpServer.keepAliveTimeout = 120000;
+httpServer.headersTimeout = 125000;

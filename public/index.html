@@ -1653,27 +1653,44 @@ function transientRequestFailure(error){
   return !status||status===408||status===425||status===429||status>=500;
 }
 
+function chatRequestError(detail,status,provider){
+  const data=safeJSON(detail,{}),html=/^\s*(?:<!doctype\s+html|<html\b)/i.test(detail||"");
+  const message=html
+    ? `チャット中継に接続できませんでした（HTTP ${status}）。Renderの起動・再デプロイ・稼働状態を確認してください。Gemini側のエラーかはこの応答だけでは判断できません。`
+    : `${provider.providerLabel||provider.provider} ${status}: ${String(data?.error?.message||detail||"接続に失敗しました。").slice(0,1200)}`;
+  const error=new Error(message);error.httpStatus=status;
+  error.code=html?"chat_gateway_error":data?.error?.code||data?.code||"";
+  error.retryable=html?[502,503,504].includes(status):data?.error?.retryable;
+  error.rawDetail=html?"":detail;
+  return error;
+}
+async function fetchChatResponse(body,{signal,fetchImpl=fetch,wait}={}){
+  for(let attempt=0;attempt<2;attempt++){
+    if(signal?.aborted)throw new DOMException("Stopped","AbortError");
+    const response=await fetchImpl(API_URL,{
+      method:"POST",headers:proxyHeaders(),body:JSON.stringify({...body,access_password:getApiKey()}),signal
+    });
+    if(response.ok)return response;
+    const detail=await response.text();
+    const error=chatRequestError(detail,response.status,selectedModel());
+    // Retry only before any stream is consumed; never replay partial tool calls.
+    if(attempt===0&&body.provider==="gemini"&&[502,503,504].includes(response.status)&&error.retryable!==false){
+      if(signal?.aborted)throw new DOMException("Stopped","AbortError");
+      if(wait)await wait();else await new Promise((resolve,reject)=>{
+        const abort=()=>{clearTimeout(timer);reject(new DOMException("Stopped","AbortError"))};
+        const timer=setTimeout(()=>{signal?.removeEventListener("abort",abort);resolve()},1000);
+        signal?.addEventListener("abort",abort,{once:true});
+      });
+      continue;
+    }
+    error.serverToolFailure=serverToolFailure(error,response.status,error.rawDetail)||(response.status===403&&body.provider==="openrouter"&&hasOpenRouterWebSearch(body));
+    error.authFailure=(response.status===401||response.status===403)&&!error.serverToolFailure;
+    throw error;
+  }
+}
 async function performStreamRequest(body,onUpdate){
   const key=getApiKey();
-  const res=await fetch(API_URL,{
-    method:"POST",
-    headers:proxyHeaders(),
-    body:JSON.stringify({...body,access_password:key}),
-    signal:abortController.signal
-  });
-  if(!res.ok){
-    let detail="";try{detail=await res.text()}catch{}
-    const provider=selectedModel();
-    const label=provider.providerLabel||provider.provider;
-    const e=new Error(`${label} ${res.status}: ${detail.slice(0,2000)}`);
-    const errorBody=safeJSON(detail,{});
-    e.httpStatus=res.status;
-    e.code=errorBody?.error?.code||errorBody?.code||"";
-    e.serverToolFailure=serverToolFailure(e,res.status,detail)||(res.status===403&&body.provider==="openrouter"&&hasOpenRouterWebSearch(body));
-    e.authFailure=(res.status===401||res.status===403)&&!e.serverToolFailure;
-    e.rawDetail=detail;
-    throw e;
-  }
+  const res=await fetchChatResponse(body,{signal:abortController.signal});
   if(!res.body)throw new Error("Streaming response body is unavailable.");
 
   const reader=res.body.getReader(),dec=new TextDecoder();let buf="";

@@ -109,7 +109,7 @@ test("billing guards block XPL even with a key, and Gemini until free-project co
 
 test("Gemini streaming tool signatures survive fragmented arguments", async()=>{
   const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
-  const source=html.slice(html.indexOf("async function performStreamRequest("),html.indexOf("async function retryWithClientWebTools("));
+  const source=html.slice(html.indexOf("function chatRequestError("),html.indexOf("async function retryWithClientWebTools("));
   const chunks=[{choices:[{delta:{tool_calls:[{index:0,id:"call",function:{name:"web_search",arguments:'{"queries":'},extra_content:{google:{thought_signature:"signed"}}}]}}]},{choices:[{delta:{tool_calls:[{index:0,function:{arguments:'["a","b"]}'}}]},finish_reason:"tool_calls"}]}];
   const request=runInNewContext(source+";performStreamRequest",{getApiKey:()=>"test",API_URL:"/api/chat",proxyHeaders:()=>({}),abortController:new AbortController(),TextDecoder,fetch:async()=>new Response(chunks.map(c=>"data: "+JSON.stringify(c)+"\n\n").join("")+"data: [DONE]\n\n")});
   const result=await request({},()=>{});
@@ -119,7 +119,7 @@ test("Gemini streaming tool signatures survive fragmented arguments", async()=>{
 
 async function streamTools(deltas,onUpdate){
   const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
-  const source=html.slice(html.indexOf("async function performStreamRequest("),html.indexOf("async function retryWithClientWebTools("));
+  const source=html.slice(html.indexOf("function chatRequestError("),html.indexOf("async function retryWithClientWebTools("));
   const chunks=deltas.map(tool_calls=>({choices:[{delta:{tool_calls}}]}));
   const request=runInNewContext(source+";performStreamRequest",{
     getApiKey:()=>"test",API_URL:"/api/chat",proxyHeaders:()=>({}),abortController:new AbortController(),TextDecoder,
