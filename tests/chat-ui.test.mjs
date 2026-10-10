@@ -194,10 +194,24 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       return result.code==="user_denied"&&(await getFile("kept.txt")).content==="preserved";
     });assert.equal(denied,true);
     await page.evaluate(()=>{
+      activeChat().messages.push({role:"assistant",content:"長い会話のスクロール確認。\n\n".repeat(150)});
+      renderThread({forceBottom:true});
+      els.chatScroll.scrollTop=0;els.chatScroll.dispatchEvent(new Event("scroll"));
+    });
+    assert.equal(await page.evaluate(()=>chatAutoFollow),false);
+    await page.evaluate(()=>{
       streamRound=async()=>new Promise((resolve,reject)=>abortController.signal.addEventListener("abort",()=>reject(new DOMException("Stopped","AbortError"))));
       els.prompt.value="停止テスト";void sendMessage();
     });
     await page.waitForFunction(()=>!document.querySelector("#stopBtn").hidden);
+    await page.waitForTimeout(80);
+    assert.equal(await page.evaluate(()=>chatDistanceFromBottom()<3&&chatAutoFollow),true);
+    const bubbleMetrics=await page.locator(".message.user").last().evaluate(node=>{
+      const bubble=node.querySelector(".bubble"),text=bubble.firstElementChild,actions=node.querySelector(".messageActions");
+      return {height:bubble.getBoundingClientRect().height,textHeight:text.getBoundingClientRect().height,actionsOutside:actions.parentElement===node,actionsBelow:actions.getBoundingClientRect().top>=bubble.getBoundingClientRect().bottom};
+    });
+    assert.equal(bubbleMetrics.actionsOutside,true);assert.equal(bubbleMetrics.actionsBelow,true);
+    assert.ok(bubbleMetrics.height-bubbleMetrics.textHeight<=22);
     assert.equal(await page.locator(".liveExecutionStatus:visible").count(),1);
     assert.equal(await page.locator(".liveExecutionStatus:visible").textContent(),"応答を待っています");
     assert.equal(await page.locator("#sendBtn").isDisabled(),true);

@@ -575,6 +575,13 @@ function scrollBottom({force=false}={}){
   if(force)chatAutoFollow=true;
   if(!force&&!chatAutoFollow)return;
   if(scrollBottomFrame)cancelAnimationFrame(scrollBottomFrame);
+  if(force){
+    // A thread replacement can queue a scroll event at the old/reset position.
+    // Settle explicit navigation now, before that event can disable follow mode.
+    els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+    lastChatScrollTop=els.chatScroll.scrollTop;
+    updateLatestButton();
+  }
   scrollBottomFrame=requestAnimationFrame(()=>{
     scrollBottomFrame=0;
     if(!force&&!chatAutoFollow)return;
@@ -1157,22 +1164,23 @@ function renderMessage(m,messageIndex=null){
       const edit=document.createElement("button");edit.type="button";edit.className="messageAction";edit.dataset.messageAction="edit";edit.textContent="編集";edit.setAttribute("aria-label","メッセージを編集");actions.appendChild(edit);
     }
     const remove=document.createElement("button");remove.type="button";remove.className="messageAction";remove.dataset.messageAction="delete";remove.textContent="削除";remove.setAttribute("aria-label","メッセージを削除");actions.appendChild(remove);
-    b.appendChild(actions);
+    wrap.appendChild(actions);
   }
-  wrap.append(av,b);return wrap;
+  wrap.prepend(av,b);return wrap;
 }
 function renderThread({forceBottom=false}={}){
   const previousScrollTop=els.chatScroll.scrollTop;
   const preserveScroll=!forceBottom&&!chatAutoFollow;
   if(forceBottom)chatAutoFollow=true;
-  const c=activeChat();els.thread.innerHTML="";
+  const c=activeChat(),fragment=document.createDocumentFragment();
   if(!c||!c.messages.length){
     const e=document.createElement("div");e.className="empty";e.innerHTML=`<div class="emptyInner"><div class="hero">N</div><h1>新しいチャット</h1></div>`;
-    els.thread.appendChild(e);
+    fragment.appendChild(e);els.thread.replaceChildren(fragment);
     if(forceBottom||chatAutoFollow)scrollBottom({force:forceBottom});
     return;
   }
-  for(const [index,m] of c.messages.entries()) if(!m.internal) els.thread.appendChild(renderMessage(m,index));
+  for(const [index,m] of c.messages.entries()) if(!m.internal) fragment.appendChild(renderMessage(m,index));
+  els.thread.replaceChildren(fragment);
   if(forceBottom||chatAutoFollow)scrollBottom({force:forceBottom});
   else if(preserveScroll)restoreChatScroll(previousScrollTop);
 }
