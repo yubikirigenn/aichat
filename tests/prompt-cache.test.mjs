@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
+import {Readable,PassThrough} from "node:stream";
+import {once} from "node:events";
 import {PROVIDERS,MODEL_CATALOG} from "../models.mjs";
 
 const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
@@ -88,4 +90,22 @@ test("non-streaming title response stays valid JSON instead of receiving an SSE 
   const res={status(){return this},setHeader(key,value){headers[key]=value},send(text){sent=text;return this},write(){writes++}};
   await handler({body:{provider:"groq",model:"test",stream:false,messages:[]}},res);
   assert.equal(JSON.parse(sent).choices[0].message.content,"自動タイトル");assert.equal(writes,0);assert.match(headers["Content-Type"],/application\/json/);
+});
+test("proxy emits a safe SSE error when the upstream stream breaks after headers",async()=>{
+  let handler;
+  const upstream=new ReadableStream({start(controller){
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning":"partial"}}]}\n\n'));
+    setTimeout(()=>controller.error(new Error("private upstream trace")),5);
+  }});
+  runInNewContext(server.slice(server.indexOf('app.post("/api/chat"'),server.indexOf("function providerCheckEndpoint(")),{
+    app:{post:(_path,fn)=>handler=fn},authorizeRequest:()=>({ok:true}),requestedModel:()=>({provider:"groq",id:"test"}),
+    providerAccess:()=>({ok:true,provider:{label:"Groq"},apiKey:"mock"}),removeAccessPassword:body=>body,adaptProviderBody:(_provider,body)=>body,
+    providerFetch:async()=>new Response(upstream,{headers:{"Content-Type":"text/event-stream"}}),
+    Readable,setInterval,clearInterval,console:{error(){}},
+  });
+  const res=new PassThrough();let output="";res.on("data",chunk=>{output+=chunk});
+  res.status=()=>res;res.setHeader=()=>{};res.flushHeaders=()=>{res.headersSent=true};
+  const finished=once(res,"finish");
+  await handler({body:{provider:"groq",model:"test",stream:true,messages:[]}},res);await finished;
+  assert.match(output,/partial/);assert.match(output,/upstream_stream_interrupted/);assert.doesNotMatch(output,/private upstream trace/);
 });

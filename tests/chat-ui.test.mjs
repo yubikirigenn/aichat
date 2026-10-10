@@ -258,7 +258,82 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       return {hasRecord:context.includes("中断・作業引継ぎ記録")&&context.includes("resume-check.txt")&&context.includes("completed"),cleared:!activeChat().resumeState,content:(await getFile("resume-check.txt")).content};
     });
     assert.equal(resumed.hasRecord,true);assert.equal(resumed.cleared,true);assert.equal(resumed.content,"created once");
-    assert.deepEqual(errors,[]);
+    const savedNotes=await page.evaluate(async()=>{
+      let round=0;streamRound=async()=>{
+        if(++round===1)return {msg:{role:"assistant",content:"",tool_calls:[{id:"notes",function:{name:"task_checkpoint",arguments:JSON.stringify({findings:["script loading confirmed"],ruled_out:["syntax problem"],next_steps:["inspect runtime"]})}}]}};
+        throw new Error("notes interruption");
+      };
+      els.prompt.value="引継ぎ内容の検証";await sendMessage();
+      return activeChat().resumeState.notes;
+    });
+    assert.deepEqual(savedNotes.findings,["script loading confirmed"]);
+    await page.reload();await page.waitForFunction(()=>db?.version===2);
+    assert.equal(await page.evaluate(()=>resumeContext(activeChat()).includes("inspect runtime")),true);
+    await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
+    // A valid reasoning-only completion gets one bounded continuation, never a
+    // silent "complete". Two empty rounds retain an interrupted checkpoint.
+    const recovered=await page.evaluate(async()=>{
+      settings.planner="off";let rounds=0;
+      streamRound=async()=>++rounds===1?{msg:{role:"assistant",reasoning:"in progress",content:"",tool_calls:[]}}:{msg:{role:"assistant",content:"続行できました",tool_calls:[]}};
+      els.prompt.value="空回答からの回復";await sendMessage();
+      return {rounds,content:activeChat().messages.at(-1).content,error:activeChat().messages.at(-1).error};
+    });
+    assert.equal(recovered.rounds,2);assert.equal(recovered.content,"続行できました");assert.equal(recovered.error,undefined);
+    const empty=await page.evaluate(async()=>{
+      let rounds=0;streamRound=async()=>{rounds++;return {msg:{role:"assistant",reasoning:"thinking only",content:"",tool_calls:[]}}};
+      els.prompt.value="空回答を繰り返す検証";await sendMessage();
+      return {rounds,error:activeChat().messages.at(-1).error,state:activeChat().resumeState.status};
+    });
+    assert.equal(empty.rounds,2);assert.match(empty.error,/回答・Tool呼び出しを返さず/);assert.equal(empty.state,"interrupted");
+    const interrupted=await page.evaluate(async()=>{
+      const saved=fetchChatResponse;
+      fetchChatResponse=async()=>new Response('data: {"choices":[{"delta":{"reasoning":"partial thoughts"}}]}\n\n');
+      streamRound=async(messages,forced,onUpdate)=>performStreamRequest({},onUpdate);
+      els.prompt.value="ストリーム切断の検証";await sendMessage();fetchChatResponse=saved;
+      return {error:activeChat().messages.at(-1).error,reasoning:activeChat().messages.at(-1).reasoning,state:activeChat().resumeState.status};
+    });
+    assert.match(interrupted.error,/終了通知なし/);assert.equal(interrupted.reasoning,"partial thoughts");assert.equal(interrupted.state,"interrupted");
+    // Exercise actual sandbox execution, not a mocked model's claim of success.
+    await page.evaluate(async()=>{
+      await putFile("index.html",'<html><head><link rel="stylesheet" href="styles.css"></head><body><button id="startBtn">START GAME</button><div id="status">idle</div><script src="game.js"><'+'/script></body></html>');
+      await putFile("styles.css","#status { color: rgb(1, 2, 3); }");
+      await putFile("game.js",'document.getElementById("startBtn").onclick=()=>{document.getElementById("status").textContent="started"};');
+      await executeTool({function:{name:"workspace_preview",arguments:'{"action":"reload"}'}});
+    });
+    await page.waitForFunction(()=>previewDiagnostics.status==="loaded");
+    const frame=page.frameLocator("#previewFrame");
+    await frame.locator("#startBtn").click();
+    assert.equal(await frame.locator("#status").textContent(),"started");
+    assert.equal(await frame.locator("#status").evaluate(el=>getComputedStyle(el).color),"rgb(1, 2, 3)");
+    await page.waitForFunction(()=>previewDiagnostics.events.some(e=>e.kind==="click"&&e.message.includes("startBtn")));
+    const diagnostic=await page.evaluate(async()=>{
+      const syntax=checkFile("game.js",'throw new Error("runtime fixture");');
+      const before=previewDiagnostics.events.length;
+      window.postMessage({channel:"workspace-preview",runId:previewRunId,kind:"error",message:"spoof"},"*");
+      await new Promise(resolve=>setTimeout(resolve,20));
+      const spoofIgnored=previewDiagnostics.events.length===before;
+      await putFile("game.js",'throw new Error("runtime fixture");');
+      await buildPreview();
+      return {syntax,spoofIgnored};
+    });
+    await page.waitForFunction(()=>previewDiagnostics.events.some(e=>e.kind==="error"));
+    assert.equal(diagnostic.syntax.ok,true);assert.equal(diagnostic.syntax.runtime_verified,false);assert.equal(diagnostic.spoofIgnored,true);
+    assert.equal(await page.evaluate(async()=>{
+      const result=await executeTool({function:{name:"workspace_preview",arguments:'{"action":"inspect"}'}});
+      return result.events.some(e=>e.kind==="error")&&result.verification.includes("断定しない");
+    }),true);
+    await page.evaluate(async()=>{
+      await putFile("index.html",'<html><head><script defer src="game.js"><'+'/script><script src="missing.js"><'+'/script></head><body><button id="startBtn">START GAME</button><div id="status">idle</div></body></html>');
+      await putFile("game.js",'document.getElementById("startBtn").onclick=()=>{document.getElementById("status").textContent="deferred"};');
+      await buildPreview();
+    });
+    await page.waitForFunction(()=>previewDiagnostics.status==="loaded");
+    await frame.locator("#startBtn").click();
+    assert.equal(await frame.locator("#status").textContent(),"deferred");
+    assert.equal(await page.evaluate(()=>previewDiagnostics.missing.includes("missing.js")),true);
+    // The intentional iframe exception is expected; every other page error fails.
+    assert.ok(errors.every(error=>error.includes("runtime fixture")));
+    assert.equal(errors.filter(error=>error.includes("runtime fixture")).length,1);
     if(process.env.CHAT_UI_SCREENSHOT)await page.screenshot({path:process.env.CHAT_UI_SCREENSHOT});
   }finally{await browser?.close();server.kill();await once(server,"exit")}
 });

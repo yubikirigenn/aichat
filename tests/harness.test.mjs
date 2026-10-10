@@ -4,8 +4,31 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const source=readFileSync(new URL("../public/harness.js",import.meta.url),"utf8");
-const h=runInNewContext(source+";({runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
+const h=runInNewContext(source+";({runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,observationText,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
 const call=(name,id)=>({id,function:{name,arguments:JSON.stringify({id})}});
+test("raw source ranges preserve literal newlines and quotes; metadata requires JSON view",()=>{
+  const content='function start() {\n  const quote = "value";\n}\n';
+  const record={text:JSON.stringify({path:"game.js",content,full_content:content+"tail"})};
+  const selected=h.observationText(record);
+  assert.equal(selected.text,content+"tail");assert.equal(selected.view,"text");
+  const hit=h.searchStoredResult(selected.text,'const quote')["matches"][0];
+  assert.ok(h.resultSlice(selected.text,hit.offset,1000).content.includes(content));
+  assert.equal(h.observationText(record,"json").text,record.text);
+  assert.equal(h.observationText({text:'{"ok":true}'}).view,"json");
+  assert.throws(()=>h.observationText(record,"bad"));
+  assert.throws(()=>h.observationText({text:'{"ok":true}'},"text"));
+});
+test("repeated successful reads are bounded, persisted, and invalidated by file edits only",()=>{
+  const read=call("tool_result_read","one"),tracker=h.createToolFailureTracker();
+  for(let i=0;i<3;i++){assert.equal(tracker.check(read),null);tracker.observe(read,{ok:true})}
+  assert.equal(tracker.check(read).code,"repeated_read");
+  assert.equal(tracker.check(call("tool_result_read","other-offset")),null);
+  tracker.observe(call("task_checkpoint","notes"),{ok:true});assert.equal(tracker.check(read).code,"repeated_read");
+  tracker.observe(call("workspace_edit_file","game.js"),{ok:true});assert.equal(tracker.check(read),null);
+  const seed=Array.from({length:3},()=>({name:read.function.name,arguments_excerpt:read.function.arguments,read_only:true,status:"completed"}));
+  assert.equal(h.createToolFailureTracker(seed).check(read).code,"repeated_read");
+  seed.push({name:"workspace_edit_file",status:"completed"});assert.equal(h.createToolFailureTracker(seed).check(read),null);
+});
 test("read-only tools run in parallel but writes and planner updates are ordered barriers",async()=>{
   let active=0,peak=0;const events=[];
   const calls=[call("web_fetch","a"),call("x_read_post","b"),call("web_search","c"),call("workspace_write_file","write"),call("workspace_read_file","read"),call("plan_update","plan")];
@@ -76,9 +99,11 @@ test("interrupted checkpoints retain completed results and unknown operations ac
   h.checkpointTool(chat.resumeState,call("web_fetch","read"),"read",{ok:true,result_ref:"result-read",content_excerpt:"取得情報"});
   h.checkpointTool(chat.resumeState,call("workspace_delete_file","unknown"),"unknown");
   chat.resumeState.status="interrupted";chat.resumeState.reason="停止";
+  chat.resumeState.notes={findings:["script not loaded"],ruled_out:["syntax failure"],next_steps:["reload preview"]};
   const restored=JSON.parse(JSON.stringify(chat));restored.messages.push({role:"assistant",content:"",error:"停止"},{role:"user",content:"続けて",at:"next"});
   restored.resumeState=h.beginResumeState(restored);
   assert.equal(restored.resumeState.task,"ファイルを編集して");assert.equal(restored.resumeState.operations.length,3);
+  assert.match(h.resumeContext(restored),/script not loaded/);assert.match(h.resumeContext(restored),/reload preview/);
   const context=h.resumeContext(restored);assert.match(context,/result-read/);assert.match(context,/workspace_delete_file/);assert.match(context,/実行結果不明/);assert.match(context,/完了済み操作を繰り返さず/);
   restored.messages[restored.resumeState.sourceIndex].content="編集された指示";
   assert.equal(h.resumeContext(restored),"");

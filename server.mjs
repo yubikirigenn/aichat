@@ -361,10 +361,9 @@ app.post("/api/chat", async (req, res) => {
 
     if (upstream.body) {
       Readable.fromWeb(upstream.body).on("error", (error) => {
-        if (!res.headersSent) {
-          res.status(502);
+        if (!res.writableEnded && !res.destroyed) {
+          res.end(`\n\ndata: ${JSON.stringify({error:{code:"upstream_stream_interrupted",message:`${access.provider.label} の生成ストリームが途中で切断されました。途中結果を確認し、続きから再開してください。`}})}\n\n`);
         }
-        res.end();
         console.error(`${access.provider.label} stream error:`, error.message);
       }).pipe(res);
     } else {
