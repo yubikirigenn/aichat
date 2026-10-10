@@ -90,8 +90,30 @@ function queryTerms(query) {
   return [...new Set(segments.filter(s => s.isWordLike).map(s => s.segment).filter(s => s.length > 1 && !stopWords.has(s)))];
 }
 
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function termMatches(text, term) {
+  // Latin words must not match inside unrelated words (AI != daily/trading).
+  return /^[a-z0-9._-]+$/i.test(term)
+    ? new RegExp(`(?<![a-z0-9])${escapeRegex(term)}(?!${/^[a-z]+$/i.test(term)?"[a-z]":"[a-z0-9]"})`, "i").test(text)
+    : text.includes(term);
+}
+function searchAnchors(query) {
+  const plain=query.replace(/-?(?:site|filetype|intitle|inurl):\S+/gi," ");
+  const generic=new Set(["API","HTTP","HTTPS","URL","WWW","PDF","HTML","JSON"]);
+  return [...new Set((plain.match(/\b[a-zA-Z][a-zA-Z0-9]*(?:[._-][a-zA-Z0-9]+)*\b/g)||[])
+    .filter(word=>/\d/.test(word)||(/^[A-Z]{3,}$/.test(word)&&!generic.has(word))))];
+}
+export function focusedSearchQuery(query, options) {
+  const anchors=searchAnchors(query);
+  if(!anchors.length||/["“”]/.test(query))return null;
+  let focused=query;
+  for(const anchor of anchors)focused=focused.replace(new RegExp(`\\b${escapeRegex(anchor)}\\b`,"g"),`"${anchor}"`);
+  return focused===query?null:buildSearchQuery(focused,options);
+}
+
 export function rankSearchResults(batches, query, options, maxResults) {
   const terms = queryTerms(query);
+  const anchors = searchAnchors(query);
   const matchesDomain = (host, domain) => host === domain || host.endsWith(`.${domain}`);
   const merged = new Map();
   for (const batch of batches) for (const [index, item] of batch.results.entries()) {
@@ -108,11 +130,16 @@ export function rankSearchResults(batches, query, options, maxResults) {
     try { readableUrl = decodeURI(readableUrl); } catch { /* Keep malformed escapes as-is. */ }
     const text = `${title} ${item.snippet || ""} ${readableUrl}`.normalize("NFKC").toLowerCase();
     if (options.exclude_terms.some(term => text.includes(term.normalize("NFKC").toLowerCase()))) continue;
-    const hits = terms.filter(term => text.includes(term)).length;
+    const hits = terms.filter(term => termMatches(text,term)).length;
     const coverage = terms.length ? hits / terms.length : 1;
-    if (terms.length && (hits === 0 || coverage < 0.25)) continue;
+    if (terms.length && (hits < Math.min(2,terms.length) || coverage < 0.5)) continue;
+    if (anchors.length && !anchors.some(anchor=>{
+      // Model IDs may use spaces instead of hyphens in display names.
+      const pattern=anchor.split(/[._-]/).map(escapeRegex).join("[._\\s-]*");
+      return new RegExp(`(?<![a-z0-9])${pattern}(?!${/^[a-z]+$/i.test(anchor)?"[a-z]":"[a-z0-9]"})`,"i").test(text);
+    })) continue;
     const key = url.replace(/^https?:\/\/(www\.)?/, "");
-    const score = coverage * 2 + terms.filter(term => title.includes(term)).length / Math.max(1, terms.length) + 1 / (index + 1);
+    const score = coverage * 2 + terms.filter(term => termMatches(title,term)).length / Math.max(1, terms.length) + 1 / (index + 1);
     const existing = merged.get(key);
     if (existing) {
       if (!existing.sources.includes(batch.id)) { existing.sources.push(batch.id); existing.score += 0.4; }
@@ -134,6 +161,7 @@ export function rankSearchResults(batches, query, options, maxResults) {
 export async function runSearch(backends, query, maxResults, options, policy = {}) {
   const batches = [], errors = [];
   const searchQuery = buildSearchQuery(query, options);
+  const focusedQuery = focusedSearchQuery(query, options);
   const started = performance.now(), controller = new AbortController();
   const timings = [], timers = [], failures = [];
   let closed = false, pending = 0, primaryPending = 0, fallbackStarted = false, settling = false;
@@ -167,10 +195,18 @@ export async function runSearch(backends, query, maxResults, options, policy = {
       for (const backend of group) {
         const at = performance.now();
         let attempts = 0;
+        let focused = false;
+        const searchQueries = [searchQuery];
         const request = async () => {
           for (;;) {
             controller.signal.throwIfAborted(); attempts++;
-            try { return await backend.run(searchQuery, Math.min(20, maxResults * 3), options, controller.signal); }
+            try {
+              const results=await backend.run(focused?focusedQuery:searchQuery, Math.min(20, maxResults * 3), options, controller.signal);
+              if(!focused&&focusedQuery&&!rankSearchResults([{id:backend.id,results}],query,options,maxResults).length){
+                focused=true;searchQueries.push(focusedQuery);continue;
+              }
+              return results;
+            }
             catch (error) {
               const transient = [408, 425, 500, 502, 503, 504].includes(Number(error?.upstream_status)) || /^(EAI_AGAIN|ECONNRESET|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)$/.test(String(error?.cause?.code || ""));
               if (!transient || attempts >= 2 || controller.signal.aborted) throw error;
@@ -182,14 +218,15 @@ export async function runSearch(backends, query, maxResults, options, policy = {
           if (closed) return;
           batches.push({ id: backend.id, results: value });
           if (!value.length) errors.push(`${backend.id}: 0 results`);
-          timings.push({ provider: backend.id, attempts, elapsed_ms: Math.round(performance.now() - at), status: value.length ? "ok" : "empty" });
+          const useful=rankSearchResults([{id:backend.id,results:value}],query,options,maxResults).length;
+          timings.push({ provider: backend.id, attempts, search_queries:searchQueries, elapsed_ms: Math.round(performance.now() - at), status: useful ? "ok" : value.length ? "irrelevant" : "empty" });
         }, error => {
           if (closed) return;
           errors.push(`${backend.id}: ${error?.message || "failed"}`);
           const status = Number(error?.upstream_status || 0), network = String(error?.cause?.code || "");
           failures.push({ provider: backend.id, upstream_status: status || undefined, network_code: network || undefined,
             retryable: [408, 425, 429, 500, 502, 503, 504].includes(status) || /^(EAI_AGAIN|ECONNRESET|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)$/.test(network) });
-          timings.push({ provider: backend.id, attempts, elapsed_ms: Math.round(performance.now() - at), status: "failed" });
+          timings.push({ provider: backend.id, attempts, search_queries:searchQueries, elapsed_ms: Math.round(performance.now() - at), status: "failed" });
         }).finally(() => {
           if (closed) return;
           pending--; if (primary) primaryPending--;
@@ -206,12 +243,12 @@ export async function runSearch(backends, query, maxResults, options, policy = {
   if (deadlineReached) errors.push("検索の時間上限に達しました。取得済みの結果を返します。");
   if (!batches.length) { const error = new Error("All search backends failed"); error.details = errors; error.backend_failures = failures; error.retryable = deadlineReached || failures.some(f => f.retryable); throw error; }
   return {
-    results, provider: batches.filter(b => b.results.length).map(b => b.id).join("+") || "none",
+    results, provider: batches.filter(b => rankSearchResults([b],query,options,maxResults).length).map(b => b.id).join("+") || "none",
     elapsed_ms: Math.round(performance.now() - started), backend_timings: timings,
     partial: unfinished > 0, deadline_reached: deadlineReached,
     backend_failures: failures,
     errors, search_query: searchQuery, filters: options,
     filter_notes: ["言語・地域は検索先への優先指定です。期間は検索先のインデックス基準で、公開日を保証しません。", "関連性はタイトル・抜粋・URLの語句一致による補助判定です。本文の確認にはweb_fetchを使ってください。"],
-    ...(results.length ? {} : { recovery_hint: "条件に合う結果がありません。主要語を短く言い換えるか、ユーザーの必須条件を維持したまま任意の絞り込みを見直してください。" }),
+    ...(results.length ? {} : { code:"no_relevant_results", recovery_hint: "条件に合う関連結果がありません。一般語だけ一致した候補は除外しています。固有名・モデルIDを保持し、公式または評価元のドメインをinclude_domainsに指定するか、既知の公式URLをweb_fetchで確認してください。検索0件は対象の不存在を意味しません。" }),
   };
 }

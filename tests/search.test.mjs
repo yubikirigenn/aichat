@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { normalizeSearchOptions, buildSearchQuery, canonicalSearchUrl, rankSearchResults, runSearch } from "../search.mjs";
+import { normalizeSearchOptions, buildSearchQuery, canonicalSearchUrl, rankSearchResults, runSearch, focusedSearchQuery } from "../search.mjs";
 
 const result = (url, title = "Render Node deployment", snippet = "Node service configuration") => ({ url, title, snippet });
 const options = body => normalizeSearchOptions(body, "Render Node");
@@ -26,6 +26,58 @@ test("canonical URLs remove tracking, fragments and parameter order duplicates",
 test("search words echoed in URL parameters do not make an unrelated page relevant", () => {
   const ranked = rankSearchResults([{ id: "bing", results: [result("https://cats.com/?q=Render+Node", "Cats", "Pet food")] }], "Render Node", options({}), 5);
   assert.equal(ranked.length, 0);
+});
+
+test("Liquid AI and Artificial Analysis searches reject the reported general-word false positives",()=>{
+  const irrelevant=[
+    result("https://www.drinkliquidplus.com/","Liquid Salad by Liquid+","Drink your daily vegetables in seconds"),
+    result("https://en.wikipedia.org/wiki/Liquid","Liquid - Wikipedia","Liquid is one of the three states of matter"),
+    result("https://www.liquid.trade/","Liquid Trading","Trading for stocks and crypto"),
+    result("https://www.merriam-webster.com/dictionary/liquid","LIQUID Definition & Meaning","The meaning of liquid"),
+    result("https://en.wikipedia.org/wiki/Artificial_intelligence","Artificial intelligence","Artificial intelligence is the capability of systems"),
+    result("https://www.youtube.com/watch?v=1","ARTIFICIAL Official Trailer","Artificial movie trailer"),
+    result("https://artificialanalysis.ai/","AI Model & API Providers Analysis | Artificial Analysis","AI model benchmarks"),
+  ];
+  for(const query of ["Liquid AI LFM latest model benchmark","Liquid AI LFM2 release","Artificial Analysis LFM2 Liquid AI intelligence index","Liquid AI LFM2.5 benchmark artificial analysis","LFM2-24B-A2B Artificial Analysis"]){
+    assert.deepEqual(rankSearchResults([{id:"bing",results:irrelevant}],query,normalizeSearchOptions({},query),10),[],query);
+  }
+  const query="Liquid AI LFM latest model benchmark";
+  const relevant=result("https://www.liquid.ai/blog/lfm2","Liquid AI LFM2 model benchmark","Latest LFM model performance and benchmarks");
+  assert.equal(rankSearchResults([{id:"bing",results:[...irrelevant,relevant]}],query,normalizeSearchOptions({},query),5)[0].url,relevant.url);
+});
+
+test("model ID anchors survive display punctuation without accepting a different ID",()=>{
+  const query="LFM2-24B-A2B Artificial Analysis";
+  const items=[result("https://example.com/wrong","LFM2 8B A1B Artificial Analysis","Model benchmark"),result("https://example.com/right","LFM2 24B A2B Artificial Analysis","Model benchmark")];
+  assert.deepEqual(rankSearchResults([{id:"bing",results:items}],query,normalizeSearchOptions({},query),5).map(r=>r.url),["https://example.com/right"]);
+});
+
+test("an irrelevant backend batch gets one focused retrieval, preserving explicit filters",async()=>{
+  const query="Liquid AI LFM2 release",filter=normalizeSearchOptions({include_domains:["liquid.ai"],time_range:"month"},query),sent=[];
+  const focused=focusedSearchQuery(query,filter);
+  assert.equal(focused,'Liquid AI "LFM2" release (site:liquid.ai)');
+  const response=await runSearch([{id:"bing",run:async(q,_max,opts)=>{
+    sent.push(q);assert.equal(opts.time_range,"month");
+    return q===focused?[result("https://liquid.ai/lfm2","Liquid AI LFM2 release","New model")]:[result("https://liquid.ai/other","Liquid AI","Company homepage")];
+  }}],query,5,filter);
+  assert.deepEqual(sent,[buildSearchQuery(query,filter),focused]);assert.equal(response.results.length,1);assert.equal(response.backend_timings[0].attempts,2);
+  assert.equal(focusedSearchQuery('Liquid AI "LFM2"',filter),null);
+});
+
+test("failed focused retrieval stays bounded and never presents irrelevant candidates as success",async()=>{
+  let calls=0;
+  const response=await runSearch([{id:"bing",run:async()=>{calls++;return [result("https://en.wikipedia.org/wiki/Liquid","Liquid","Liquid AI trading daily")];}}],"Liquid AI LFM2 release",5,options({}));
+  assert.equal(calls,2);assert.equal(response.results.length,0);assert.equal(response.code,"no_relevant_results");assert.equal(response.backend_timings[0].status,"irrelevant");
+});
+
+test("fast generic-word results do not cancel a slower relevant search engine",async()=>{
+  const query="Liquid AI LFM2 release";
+  const response=await runSearch([
+    {id:"bing",run:async()=>[result("https://en.wikipedia.org/wiki/Liquid","Liquid","Liquid AI daily trading release")]},
+    {id:"ddg",run:async()=>{await new Promise(r=>setTimeout(r,20));return [result("https://liquid.ai/lfm2","Liquid AI LFM2 release","Official model")];}},
+  ],query,5,normalizeSearchOptions({},query),{settleMs:1,deadlineMs:200,hedgeMs:100});
+  assert.equal(response.results[0].url,"https://liquid.ai/lfm2");assert.equal(response.provider,"ddg");
+  assert.equal(response.backend_timings.find(t=>t.provider==="bing").status,"irrelevant");
 });
 
 test("rank merges engines, removes unrelated hits and enforces domain boundaries", () => {
