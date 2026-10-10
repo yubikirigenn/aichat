@@ -158,9 +158,10 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     let activeReads=0,peakReads=0;
     await page.route("**/api/web-fetch",async route=>{
       activeReads++;peakReads=Math.max(peakReads,activeReads);
-      const url=route.request().postDataJSON().url;
+      const request=route.request().postDataJSON(),url=request.url;
+      assert.equal(request.include_full_content,true);
       await new Promise(resolve=>setTimeout(resolve,url.endsWith("a")?90:30));activeReads--;
-      await route.fulfill({json:{ok:true,url,content:"prefix "+"x".repeat(12000)+"NEEDLE "+url}});
+      await route.fulfill({json:{ok:true,url,content:"initial excerpt",full_content:"prefix "+"x".repeat(2000100)+"NEEDLE "+url,stored_chars:2000200,full_content_truncated:false}});
     });
     const generation=await page.evaluate(async()=>{
       let round=0,ordered=false;

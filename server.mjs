@@ -774,8 +774,9 @@ function extractReadableText(html, maxChars) {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
-  if (text.length > maxChars) text = text.slice(0, maxChars) + "\n…[truncated]";
-  return { title, text };
+  const total_chars = text.length;
+  if (text.length > maxChars) text = text.slice(0, maxChars);
+  return { title, text, total_chars, truncated: total_chars > maxChars };
 }
 
 function isPrivateOrLocalUrl(rawUrl) {
@@ -918,19 +919,30 @@ app.post("/api/web-fetch", async (req, res) => {
 
     let title = "";
     let content = "";
+    let totalChars = 0;
+    // Retain a bounded full document for browser-side search/range reads.
+    // max_chars still controls the initial excerpt, not the stored document.
+    const retainFull = req.body?.include_full_content === true;
+    const extractionLimit = retainFull ? 20_000_000 : maxChars;
     if (/text\/html|application\/xhtml/i.test(contentType) || /<html[\s>]/i.test(raw.slice(0, 2000))) {
-      const extracted = extractReadableText(raw, maxChars);
+      const extracted = extractReadableText(raw, extractionLimit);
       title = extracted.title;
       content = extracted.text;
+      totalChars = extracted.total_chars;
     } else {
-      content = raw.slice(0, maxChars);
+      totalChars = raw.length;
+      content = raw.slice(0, extractionLimit);
     }
 
     return res.json({
       ok: true,
       url,
       title,
-      content,
+      content: content.slice(0, maxChars),
+      total_chars: totalChars,
+      truncated: totalChars > maxChars,
+      ...(retainFull ? { full_content: content, stored_chars: content.length, full_content_truncated: totalChars > content.length } : {}),
+      fetched_bytes: response.bytes,
       content_type: contentType,
       status: response.status,
       final_url: response.final_url, attempts: response.attempts,

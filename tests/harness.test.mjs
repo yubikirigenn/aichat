@@ -46,3 +46,12 @@ test("context window never splits latest tool pairs or mutates saved history",()
   assert.equal(window.omitted,2);assert.equal(window.messages[0].role,"user");assert.equal(window.messages[1].tool_calls[0].id,"a");assert.equal(window.messages[2].tool_call_id,"a");
   assert.equal(window.over_budget,false);assert.equal(JSON.stringify(messages),original);assert.equal(JSON.parse(window.messages[2].content).result_ref,"result-a");
 });
+test("full page beyond the initial excerpt is searchable and truncation stays explicit",()=>{
+  const result={ok:true,content:"initial excerpt",full_content:"a".repeat(60000)+"END_OF_LONG_PAGE",stored_chars:60016,full_content_truncated:false};
+  const preview=h.toolResultPreview(result,"result-page");
+  assert.equal(preview.full_content,undefined);assert.equal(preview.full_content_truncated,false);
+  assert.ok(JSON.stringify(preview).length<4000);
+  const text=JSON.stringify(result),found=h.searchStoredResult(text,"END_OF_LONG_PAGE",5);
+  assert.equal(found.count,1);assert.ok(h.resultSlice(text,found.matches[0].offset,1000).content.includes("END_OF_LONG_PAGE"));
+  assert.match(h.toolResultPreview({...result,full_content_truncated:true},"result-page").next_action,/保存範囲外/);
+});

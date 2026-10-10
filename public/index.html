@@ -1442,7 +1442,7 @@ async function executeTool(call,onEvent=()=>{}){
       const url=String(args.url||"").trim();
       if(!url)throw new Error("url is required");
       const maxChars=clamp(Number(args.max_chars||12000),500,50000);
-      result=await callWebProxy(WEB_FETCH_URL,{url,max_chars:maxChars});
+      result=await callWebProxy(WEB_FETCH_URL,{url,max_chars:maxChars,include_full_content:true});
     }else if(isServerToolName(name)){
       // Server tools are executed by OpenRouter upstream; a client call means the
       // stream surfaced a tool_call we should not re-run.

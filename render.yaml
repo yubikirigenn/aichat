@@ -27,6 +27,8 @@ services:
         sync: false
       - key: TAVILY_FREE_TIER_CONFIRMED
         value: "false"
+      - key: WEB_FETCH_MAX_BYTES
+        value: "20000000"
       - key: EXPERIENTIAL_LABS_API_KEY
         sync: false
       - key: APP_ACCESS_PASSWORD
