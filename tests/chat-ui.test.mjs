@@ -43,6 +43,10 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       };
     }));
     await page.goto("http://127.0.0.1:31302");await page.waitForFunction(()=>!!document.querySelector("#quickModel option"));
+    assert.equal(await page.locator('link[rel="icon"]').getAttribute("href"),"/favicon.svg");
+    const favicon=await page.request.get("http://127.0.0.1:31302/favicon.svg");
+    assert.equal(favicon.status(),200);assert.match(favicon.headers()["content-type"],/image\/svg\+xml/);
+    assert.match(await favicon.text(),/viewBox="0 0 64 64"/);
     await page.waitForFunction(()=>db?.version===2);
     assert.equal(await page.evaluate(async()=>(await getFile("kept.txt")).content),"preserved");
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
