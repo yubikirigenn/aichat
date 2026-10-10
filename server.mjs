@@ -155,6 +155,10 @@ function removeAccessPassword(body) {
 
 function adaptProviderBody(provider, body, model = null) {
   const adapted = { ...body };
+  // This app-only hint is supported upstream only on OpenRouter.
+  delete adapted.cache_session_id;
+  delete adapted.session_id;
+  if (provider.id === "openrouter" && typeof body.cache_session_id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(body.cache_session_id)) adapted.session_id = body.cache_session_id;
   const supportsReasoning = model?.supportsReasoning !== false && provider.supportsReasoning !== false;
   const supportsTemperature = model?.supportsTemperature !== false && provider.supportsTemperature !== false;
 
@@ -329,6 +333,8 @@ app.post("/api/chat", async (req, res) => {
       upstream.headers.get("content-type") || "text/event-stream; charset=utf-8",
     );
     res.setHeader("Cache-Control", upstream.headers.get("cache-control") || "no-cache, no-transform");
+    // Non-streaming title responses must remain valid JSON, without SSE comments.
+    if (forwardedBody.stream === false) return res.send(await upstream.text());
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();

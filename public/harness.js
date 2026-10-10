@@ -92,6 +92,15 @@ function conversationWindow(messages,budget=60000) {
   return {messages:visible,omitted:start,estimated_chars:total,over_budget:total>budget};
 }
 
+function readCacheUsage(usage) {
+  const prompt=usage?.prompt_tokens;
+  const cached=usage?.prompt_tokens_details?.cached_tokens??usage?.prompt_cache_hit_tokens;
+  const writes=usage?.prompt_tokens_details?.cache_write_tokens??0;
+  // Missing metrics are unknown, not a zero-percent cache hit.
+  if(!Number.isFinite(prompt)||prompt<0||!Number.isFinite(cached)||cached<0||cached>prompt||!Number.isFinite(writes)||writes<0)return null;
+  return {prompt_tokens:prompt,cached_tokens:cached,cache_write_tokens:writes};
+}
+
 async function getStoredObservation(reference,chatId) {
   if(typeof reference!=="string"||!reference.startsWith("result-"))throw new Error("有効なresult_refを指定してください。");
   const record=await dbReq(tx(RESULT_STORE).get(reference));

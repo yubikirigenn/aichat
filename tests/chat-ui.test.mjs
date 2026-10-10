@@ -62,12 +62,14 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       streamRound=async(messages,forced,onUpdate)=>{
         round++;
         const msg=round===1?{role:"assistant",content:"調査します。",reasoning:"条件を確認しています。",tool_calls:[{id:"test-time",function:{name:"current_datetime",arguments:"{}"}}]}:{role:"assistant",reasoning:"確認できました。",content:"# 回答\n\n"+"動作確認の本文です。\n\n".repeat(80)};
-        onUpdate({...msg});return {msg,usage:{completion_tokens:20,cost:0}};
+        onUpdate({...msg});return {msg,usage:{completion_tokens:20,cost:0,...(round===1?{prompt_tokens:2000,prompt_tokens_details:{cached_tokens:1000}}:{})}};
       };
       document.querySelector("#prompt").value="テスト";await sendMessage();
     });
     await page.waitForFunction(()=>activeChat().aiTitleGenerated===true);
     assert.equal(await page.locator("#chatTitle").textContent(),"日時の動作確認");
+    assert.deepEqual(await page.evaluate(()=>activeChat().messages.at(-1).meta.cache),{prompt_tokens:2000,cached_tokens:1000,cache_write_tokens:0,reported_rounds:1,total_rounds:2});
+    assert.match(await page.locator(".meta details").textContent(),/Cache: 1,000 \/ 2,000 tokens \(50.0%\).*1\/2 rounds報告/);
     assert.equal(await page.locator(".timelineText").count(),2);
     assert.equal(await page.locator(".reasoningText").count(),2);
     assert.equal(await page.locator(".executionRow.activity").count(),1);
