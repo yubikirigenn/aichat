@@ -76,21 +76,40 @@ function searchStoredResult(text,query,maxResults=5) {
   while(matches.length<maxResults){const index=haystack.indexOf(needle,offset);if(index<0)break;const start=Math.max(0,index-120);matches.push({offset:start,match_offset:index,excerpt:text.slice(start,index+needle.length+240)});offset=index+needle.length}
   return {matches,count:matches.length,query,total_chars:text.length};
 }
-function conversationWindow(messages,budget=60000) {
+function conversationWindow(messages,budget=240000) {
   // Whole historical turns only: never split a tool-call/result pair or signature.
   let latestUser=messages.findLastIndex(m=>m.role==="user");if(latestUser<0)latestUser=0;
   const weight=m=>JSON.stringify({role:m.role,content:m.content,tool_calls:m.tool_calls,reasoning:m.reasoning,reasoning_details:m.reasoning_details,tool_call_id:m.tool_call_id,images:m.images?.map(()=>"[image]".repeat(1000))}).length;
   let start=0,total=messages.reduce((sum,m)=>sum+weight(m),0);
   while(total>budget&&start<latestUser){let end=start+1;while(end<latestUser&&messages[end].role!=="user")end++;for(let i=start;i<end;i++)total-=weight(messages[i]);start=end}
   const visible=messages.slice(start).map(m=>({...m}));
+  let compacted=0;
+  const reweight=(m,change)=>{const before=weight(m);change();total+=weight(m)-before;compacted++};
+  // Plain reasoning transcripts can dwarf the useful tool results. Keep them in
+  // the UI/history, but omit older transcripts from an over-budget API request.
+  // Never alter provider reasoning_details or tool-call thought signatures.
+  const latestRound=visible.findLastIndex(m=>m.role==="assistant"&&m.tool_calls?.length);
+  if(total>budget)for(const [index,m] of visible.entries()){
+    if(index>=latestRound||m.role!=="assistant"||!m.reasoning)continue;
+    reweight(m,()=>{delete m.reasoning});if(total<=budget)break;
+  }
   if(total>budget)for(const m of visible){
     if(m.role!=="tool"||typeof m.content!=="string"||m.content.length<2000)continue;
     let result;try{result=JSON.parse(m.content)}catch{continue}
     if(!result.result_ref)continue;
-    const before=m.content.length;
-    m.content=JSON.stringify({ok:result.ok,result_ref:result.result_ref,truncated:true,url:result.url,count:result.count,error:result.error,next_action:"過去の取得結果は省略しました。tool_result_read / tool_result_searchで必要箇所を確認してください。"});total-=before-m.content.length;if(total<=budget)break;
+    reweight(m,()=>{m.content=JSON.stringify({ok:result.ok,result_ref:result.result_ref,truncated:true,url:result.url,count:result.count,error:result.error,offset:result.offset,next_offset:result.next_offset,next_action:"過去の取得結果は省略しました。tool_result_read / tool_result_searchで必要箇所を確認してください。"})});if(total<=budget)break;
   }
-  return {messages:visible,omitted:start,estimated_chars:total,over_budget:total>budget};
+  // Preserve all call/result pairs and the newest round. Older working data can
+  // be recovered from the original chat by its unchanged message index.
+  if(total>budget)for(const [index,m] of visible.entries()){
+    if(index>=latestRound||!(["assistant","tool"].includes(m.role))||typeof m.content!=="string"||m.content.length<1600)continue;
+    const originalIndex=start+index;
+    reweight(m,()=>{m.content=m.role==="tool"
+      ? JSON.stringify({truncated:true,history_message_index:originalIndex,excerpt:m.content.slice(0,500),next_action:`必要な内容はchat_history_read(start=${originalIndex}, count=1)で再読取してください。元データは削除していません。`})
+      : m.content.slice(0,1000)+`\n[途中省略。chat_history_read(start=${originalIndex}, count=1)で原文を確認できます。]`});
+    if(total<=budget)break;
+  }
+  return {messages:visible,omitted:start,compacted,estimated_chars:total,over_budget:total>budget};
 }
 
 function readCacheUsage(usage) {

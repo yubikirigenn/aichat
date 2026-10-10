@@ -55,3 +55,17 @@ test("full page beyond the initial excerpt is searchable and truncation stays ex
   assert.equal(found.count,1);assert.ok(h.resultSlice(text,found.matches[0].offset,1000).content.includes("END_OF_LONG_PAGE"));
   assert.match(h.toolResultPreview({...result,full_content_truncated:true},"result-page").next_action,/保存範囲外/);
 });
+test("a moderate research turn fits the expanded default context",()=>{
+  const messages=[{role:"user",content:"調査して"}];
+  for(let i=0;i<8;i++)messages.push({role:"assistant",content:"確認します",reasoning:"r".repeat(6000),tool_calls:[call("web_search",String(i))]},{role:"tool",tool_call_id:String(i),content:"result".repeat(1000)});
+  const window=h.conversationWindow(messages);assert.equal(window.over_budget,false);assert.equal(window.omitted,0);
+});
+test("current-turn compaction preserves pairs, latest results, signatures and saved originals",()=>{
+  const messages=[{role:"user",content:"調査して"}];
+  for(let i=0;i<12;i++)messages.push({role:"assistant",content:"progress ".repeat(1000),reasoning:"r".repeat(10000),reasoning_details:[{signature:"signed"}],tool_calls:[{...call("web_search",String(i)),extra_content:{google:{thought_signature:"sig"}}}]},{role:"tool",tool_call_id:String(i),content:JSON.stringify({ok:true,content:"data".repeat(2000)})});
+  const original=JSON.stringify(messages),window=h.conversationWindow(messages,50000);
+  assert.equal(window.over_budget,false);assert.ok(window.compacted>0);assert.equal(window.messages.length,messages.length);
+  assert.equal(JSON.stringify(messages),original);assert.equal(window.messages.at(-1).content,messages.at(-1).content);
+  for(let i=1;i<window.messages.length;i+=2){assert.equal(window.messages[i].tool_calls[0].id,window.messages[i+1].tool_call_id);assert.equal(window.messages[i].tool_calls[0].extra_content.google.thought_signature,"sig");assert.equal(window.messages[i].reasoning_details[0].signature,"signed")}
+  assert.ok(window.messages.some(m=>m.content.includes("history_message_index")));
+});

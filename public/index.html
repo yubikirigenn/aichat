@@ -1565,8 +1565,8 @@ ${settings.systemPrompt?`\nユーザー追加System Prompt:\n${settings.systemPr
 }
 function apiMessages(c,webRecoveryGuidance=""){
   const baseSystemPrompt=buildSystemPrompt();
-  const window=conversationWindow(c.messages,Math.max(16000,60000-baseSystemPrompt.length-JSON.stringify(buildTools()).length));
-  if(window.over_budget)throw new Error("現在のターンのコンテキスト上限に達しました。取得範囲を絞るか、新しいチャットで続きを依頼してください。");
+  const window=conversationWindow(c.messages,Math.max(16000,240000-baseSystemPrompt.length-JSON.stringify(buildTools()).length));
+  if(window.over_budget)throw new Error("大きな入力または直近のTool呼び出しがコンテキスト保護上限を超えました。入力・Tool引数を分割してください。会話と取得結果は保持されています。");
   const messages=[{role:"system",content:baseSystemPrompt},...window.messages.filter(m=>["user","assistant","tool"].includes(m.role)).map(m=>{
     const x={role:m.role,content:m.content??""};
     if(m.role==="user"&&m.images?.some(image=>safeImageDataUrl(image?.dataUrl))){
@@ -1579,7 +1579,7 @@ function apiMessages(c,webRecoveryGuidance=""){
     return x;
   })];
   // Keep volatile state at the end; never rewrite the reusable system/history prefix.
-  const state=[window.omitted?`[コンテキスト管理] 過去ログのメッセージ0〜${window.omitted-1}は省略しています。必要な内容はchat_history_readで原文を確認してください。`:"",webRecoveryGuidance?`[ツール復旧指示]\n${webRecoveryGuidance}`:""].filter(Boolean).join("\n\n");
+  const state=[window.omitted?`[コンテキスト管理] 過去ログのメッセージ0〜${window.omitted-1}は省略しています。必要な内容はchat_history_readで原文を確認してください。`:"",window.compacted?"[コンテキスト管理] 作業履歴の古い本文・推論表示を送信時だけ省略しました。省略された事実を推測せず、result_refまたはhistory_message_indexで必要な内容を再読取してください。":"",webRecoveryGuidance?`[ツール復旧指示]\n${webRecoveryGuidance}`:""].filter(Boolean).join("\n\n");
   if(state)messages.push({role:"user",content:`[ハーネス状態]\n${state}`});
   return messages;
 }
