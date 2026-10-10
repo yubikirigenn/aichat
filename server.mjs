@@ -7,6 +7,7 @@ import { normalizeSearchOptions, runSearch, normalizeSearchQueries, runSearchBat
 import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
 import { createXSearcher, normalizeXSearch } from "./x-search.mjs";
 import { readWebPage } from "./web-reader.mjs";
+import { createTavilySearcher } from "./tavily-search.mjs";
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_KEY,
@@ -23,6 +24,15 @@ const publicDir = path.join(__dirname, "public");
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 const readXPost = createXPostReader();
+const searchTavily = createTavilySearcher();
+
+async function searchWeb(query, maxResults, options) {
+  const apiKey = normalizeApiKey(process.env.TAVILY_API_KEY);
+  if (apiKey) return searchTavily(query, maxResults, options, { apiKey, freeTierConfirmed: process.env.TAVILY_FREE_TIER_CONFIRMED === "true" });
+  const result = await runSearch(SEARCH_BACKENDS, query, maxResults, options);
+  result.errors.push("Tavily未設定のため旧HTML検索を使用しています。取得制限や検索精度の問題が残る場合があります。");
+  return result;
+}
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20mb", strict: true }));
@@ -92,6 +102,7 @@ function providerAccess(providerId) {
 function redactSecrets(value) {
   return String(value || "")
     .replace(/thk_[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/tvly-[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(/sk-or-v1-[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]");
 }
@@ -266,6 +277,7 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/models", (_req, res) => {
   res.json({
+    webSearch: { provider: normalizeApiKey(process.env.TAVILY_API_KEY) ? "tavily" : "legacy" },
     default: { provider: DEFAULT_MODEL.provider, model: DEFAULT_MODEL.id, key: DEFAULT_MODEL_KEY },
     providers: Object.values(PROVIDERS).map((provider) => ({
       id: provider.id,
@@ -817,10 +829,10 @@ app.post("/api/web-search", async (req, res) => {
 
   try {
     if (req.body.queries !== undefined) {
-      const result = await runSearchBatch(queries, q => runSearch(SEARCH_BACKENDS, q, maxResults, normalizeSearchOptions(req.body, q)));
+      const result = await runSearchBatch(queries, q => searchWeb(q, maxResults, normalizeSearchOptions(req.body, q)));
       return res.json({ ...result, warnings: result.warnings.map(redactSecrets), retrieved_at: new Date().toISOString() });
     }
-    const { results, provider, errors, ...metadata } = await runSearch(SEARCH_BACKENDS, query, maxResults, options);
+    const { results, provider, errors, ...metadata } = await searchWeb(query, maxResults, options);
     return res.json({
       ok: true,
       query,
@@ -832,10 +844,12 @@ app.post("/api/web-search", async (req, res) => {
       retrieved_at: new Date().toISOString(),
     });
   } catch (error) {
-    return res.status(502).json({
+    return res.status(error.searchSafe ? error.status : 502).json({
       error: {
         message: `Web検索に失敗しました: ${redactSecrets(error?.message || "unknown error")}`,
-        code: "web_search_failed",
+        code: error.searchSafe ? error.code : "web_search_failed",
+        next_action: error.searchSafe ? error.next_action : undefined,
+        upstream_status: error.searchSafe ? error.upstream_status : undefined,
         retryable: error.retryable, backend_failures: error.backend_failures,
         details: error?.details?.map(detail => redactSecrets(detail)),
       },

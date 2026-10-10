@@ -378,7 +378,7 @@ html,body{background:var(--bg);color:var(--text)}
       <div class="field"><label>Web検索最大Call / 応答</label><input id="webMaxCallsInput" type="number" min="1" max="20" step="1"></div>
       <div class="field"><label>Workspace保持履歴 / ファイル</label><input id="fileHistoryInput" type="number" min="1" max="50" step="1"></div>
     </div>
-    <div class="note warn">Web検索には検索エンジン側の料金が発生する場合があります。機密情報・個人情報は送信しないでください。OpenRouter以外のプロバイダでは、このアプリのサーバ経由（Bing / DuckDuckGo / Wikipedia）で検索します。</div>
+    <div class="note warn">検索先に検索語が送信されます。機密情報・個人情報は入力しないでください。検索APIの利用枠は管理者が設定します。</div>
     <div class="field">
       <label>追加System Prompt</label>
       <textarea id="systemPromptInput" placeholder="任意の追加指示"></textarea>
@@ -490,6 +490,7 @@ let toolLog = [];
 let previewTimer = null;
 let modelCatalog = [...FALLBACK_MODELS];
 let providerCatalog = [];
+let webSearchProvider = "legacy";
 let pendingImages = [];
 let editingMessageIndex = null;
 let editDraftBackup = null;
@@ -733,6 +734,7 @@ async function loadModelCatalog(){
     const data=await response.json();
     if(Array.isArray(data.models)&&data.models.length)modelCatalog=data.models;
     if(Array.isArray(data.providers))providerCatalog=data.providers;
+    webSearchProvider=data.webSearch?.provider==="tavily"?"tavily":"legacy";
     if(data.default&&!settings.model){settings.provider=data.default.provider;settings.model=data.default.model}
   }catch(error){
     console.warn("モデルカタログを読み込めませんでした",error);
@@ -1529,8 +1531,8 @@ Playgroundルール:
 Web:
 - 現在情報・最新情報・外部事実の確認が必要なときは、必ず Web検索ツールを使ってください。
 - Xのキーワード・話題・ユーザーの投稿を探す場合は x_search を使います（直近7日間の公式API検索）。通常Web検索のsite:x.comをX API検索と偽らないでください。未設定・課金・認証・制限エラー時は同じ要求を繰り返さず利用者に伝えます。引用時は結果の投稿URLを出典にします。
-- OpenRouter利用時は openrouter:web_search / openrouter:web_fetch（Server Tool）を使います。
-- その他のプロバイダ、またはServer Toolが使えない場合は web_search / web_fetch を使ってください。
+- 検索・ページ読取は web_search / web_fetch を優先してください。openrouter:web_search / openrouter:web_fetch は提供されている場合だけ使えます。
+- 認証・未設定・利用枠のエラーではクエリを変えて連続送信せず、利用者に必要な設定や待機を伝えてください。
 - ドメイン・除外語・完全一致・形式・期間・言語・地域で絞る場合は、OpenRouterでも web_search Function Toolを使ってください。
 - 独立した調査項目・検索語の候補が複数ある場合は、OpenRouterでも web_search の queries 配列（最大6件・3並列）へまとめ、1件ずつの呼び出しを避けてください。各クエリの結果・失敗を確認し、失敗・0件のものだけ再検索します。単一検索はquery、複数はqueriesで、両方同時には渡しません。
 - 検索は固有名詞・バージョン・エラーコードを保った短い語句で行い、公式情報は既知の公式ドメインを include_domains に指定します。国内情報は日本語・JP、海外資料は原文の言語を優先してください。
@@ -1579,7 +1581,7 @@ function buildTools(includeServerWeb=true){
   const useWeb=Boolean(settings.web);
   if(!useWeb)return tools;
 
-  if(selected.provider==="openrouter" && includeServerWeb){
+  if(selected.provider==="openrouter" && includeServerWeb && webSearchProvider!=="tavily"){
     // Preferred path: OpenRouter Server Tools (model-native, executed upstream).
     const per=Number(settings.webResults||5),calls=clamp(Number(settings.webMaxCalls||4),1,20);
     const searchParams={

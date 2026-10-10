@@ -23,6 +23,10 @@ services:
         sync: false
       - key: X_SEARCH_ENABLED
         value: "false"
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: TAVILY_FREE_TIER_CONFIRMED
+        value: "false"
       - key: EXPERIENTIAL_LABS_API_KEY
         sync: false
       - key: APP_ACCESS_PASSWORD

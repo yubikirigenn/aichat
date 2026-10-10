@@ -38,7 +38,7 @@ test("partial tool activity retains streamed targets before execution",()=>{
 test("browser: stable streaming, real generation flow, scrolling and responsive panels",{skip:!process.env.CHAT_UI_BROWSER},async()=>{
   const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||"playwright");
   const {spawn}=await import("node:child_process");const {once}=await import("node:events");
-  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,PORT:"31302"},stdio:["ignore","pipe","pipe"]});
+  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,PORT:"31302",APP_ACCESS_PASSWORD:"browser-test-password",TAVILY_API_KEY:"tvly-test-disabled",TAVILY_FREE_TIER_CONFIRMED:"false"},stdio:["ignore","pipe","pipe"]});
   let browser;
   try{
     await once(server.stdout,"data");
@@ -57,6 +57,15 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       };
     }));
     await page.goto("http://127.0.0.1:31302");await page.waitForFunction(()=>!!document.querySelector("#quickModel option"));
+    const searchCatalog=await page.request.get("http://127.0.0.1:31302/api/models");
+    assert.equal((await searchCatalog.json()).webSearch.provider,"tavily");
+    assert.equal(await page.evaluate(()=>webSearchProvider),"tavily");
+    const disabledSearch=await page.request.post("http://127.0.0.1:31302/api/web-search",{data:{access_password:"browser-test-password",query:"Liquid AI LFM"}});
+    assert.equal(disabledSearch.status(),503);
+    assert.equal((await disabledSearch.json()).error.code,"tavily_free_unconfirmed");
+    const disabledBatch=await page.request.post("http://127.0.0.1:31302/api/web-search",{data:{access_password:"browser-test-password",queries:["Liquid AI LFM","Artificial Analysis LFM"]}});
+    const batchData=await disabledBatch.json();assert.equal(batchData.ok,false);
+    assert.equal(batchData.searches[1].code,"tavily_free_unconfirmed");
     assert.equal(await page.locator('link[rel="icon"]').getAttribute("href"),"/favicon.svg");
     const favicon=await page.request.get("http://127.0.0.1:31302/favicon.svg");
     assert.equal(favicon.status(),200);assert.match(favicon.headers()["content-type"],/image\/svg\+xml/);

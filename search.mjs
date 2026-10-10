@@ -14,7 +14,7 @@ export async function runSearchBatch(queries, search, concurrency = 3) {
       const index = cursor++; if (index >= queries.length) return;
       const query = queries[index];
       try { const { errors = [], ...result } = await search(query); searches[index] = { query, ok: true, ...result, warnings: errors }; }
-      catch (error) { searches[index] = { query, ok: false, results: [], error: "検索先で失敗しました。失敗理由に応じて検索先・クエリを見直してください。", code: "web_search_failed", retryable: error.retryable === true, backend_failures: error.backend_failures || [],
+      catch (error) { searches[index] = { query, ok: false, results: [], error: error.searchSafe ? error.message : "検索先で失敗しました。失敗理由に応じて検索先・クエリを見直してください。", code: error.searchSafe ? error.code : "web_search_failed", next_action: error.searchSafe ? error.next_action : undefined, upstream_status: error.searchSafe ? error.upstream_status : undefined, retryable: error.retryable === true, backend_failures: error.backend_failures || [],
         details: Array.isArray(error.details) ? error.details.map(detail => String(detail).slice(0, 300)).slice(0, 4) : [],
       }; }
     }
@@ -30,7 +30,9 @@ export async function runSearchBatch(queries, search, concurrency = 3) {
   const summaries = searches.map(({ results, ...rest }) => ({ ...rest, results: results.map(({ url, title }) => ({ url, title })) }));
   return { ok: searches.some(s => s.ok), queries, searches: summaries, results, count: results.length,
     warnings: searches.flatMap(s => s.warnings || [s.error]).filter(Boolean),
-    ...(searches.some(s => !s.ok || !s.results.length) ? { recovery_hint: "成功したクエリの結果を利用し、失敗・0件のクエリだけ修正して再検索してください。" } : {}) };
+    ...(searches.some(s => !s.ok || !s.results.length) ? { recovery_hint: searches.some(s => !s.ok && s.next_action && !s.retryable)
+      ? "認証・利用枠・設定エラーはクエリ変更では解決しません。各クエリのnext_actionを確認し、必要な設定や待機を利用者に伝えてください。"
+      : "成功したクエリの結果を利用し、失敗・0件のクエリだけ修正して再検索してください。" } : {}) };
 }
 
 export function normalizeSearchOptions(body = {}, query = "") {
@@ -111,7 +113,7 @@ export function focusedSearchQuery(query, options) {
   return focused===query?null:buildSearchQuery(focused,options);
 }
 
-export function rankSearchResults(batches, query, options, maxResults) {
+export function rankSearchResults(batches, query, options, maxResults, { providerRank = false } = {}) {
   const terms = queryTerms(query);
   const anchors = searchAnchors(query);
   const matchesDomain = (host, domain) => host === domain || host.endsWith(`.${domain}`);
@@ -132,14 +134,14 @@ export function rankSearchResults(batches, query, options, maxResults) {
     if (options.exclude_terms.some(term => text.includes(term.normalize("NFKC").toLowerCase()))) continue;
     const hits = terms.filter(term => termMatches(text,term)).length;
     const coverage = terms.length ? hits / terms.length : 1;
-    if (terms.length && (hits < Math.min(2,terms.length) || coverage < 0.5)) continue;
-    if (anchors.length && !anchors.some(anchor=>{
+    if (!providerRank && terms.length && (hits < Math.min(2,terms.length) || coverage < 0.5)) continue;
+    if (!providerRank && anchors.length && !anchors.some(anchor=>{
       // Model IDs may use spaces instead of hyphens in display names.
       const pattern=anchor.split(/[._-]/).map(escapeRegex).join("[._\\s-]*");
       return new RegExp(`(?<![a-z0-9])${pattern}(?!${/^[a-z]+$/i.test(anchor)?"[a-z]":"[a-z0-9]"})`,"i").test(text);
     })) continue;
     const key = url.replace(/^https?:\/\/(www\.)?/, "");
-    const score = coverage * 2 + terms.filter(term => termMatches(title,term)).length / Math.max(1, terms.length) + 1 / (index + 1);
+    const score = providerRank ? 1 / (index + 1) : coverage * 2 + terms.filter(term => termMatches(title,term)).length / Math.max(1, terms.length) + 1 / (index + 1);
     const existing = merged.get(key);
     if (existing) {
       if (!existing.sources.includes(batch.id)) { existing.sources.push(batch.id); existing.score += 0.4; }
@@ -149,6 +151,7 @@ export function rankSearchResults(batches, query, options, maxResults) {
   // Avoid one site filling the entire first page; keep remaining same-site hits
   // afterwards, so single-site searches do not silently lose useful results.
   const sorted = [...merged.values()].sort((a, b) => b.score - a.score);
+  if (providerRank) return sorted.slice(0, maxResults).map(({ score: _score, ...result }) => result);
   const counts = new Map(), first = [], rest = [];
   for (const result of sorted) {
     const host = new URL(result.url).hostname.replace(/^www\./, "");
