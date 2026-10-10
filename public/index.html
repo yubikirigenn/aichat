@@ -1038,7 +1038,7 @@ function renderActivityHTML(activity=[]){
 function upsertActivity(msg,id,name,status,detail=""){
   msg.activity=msg.activity||[];
   let a=msg.activity.find(x=>x.id===id);
-  if(!a){a={id,name,status,detail,at:nowISO()};msg.activity.push(a);if(msg.timeline)msg.timeline.push({id,kind:"activity"})}
+  if(!a){a={id,name,status,detail,at:nowISO()};msg.activity.push(a);msg.timeline||=[];msg.timeline.push({id,kind:"activity"})}
   else{if(name)a.name=name;if(status)a.status=status;if(detail!==undefined)a.detail=detail}
   return a;
 }
@@ -1047,12 +1047,14 @@ function syncPartialToolActivity(msg,partial){
   for(const name of webFunctionTools.map(t=>t.function?.name))known.add(name);
   for(const tc of partial.tool_calls||[]){
     const name=tc?.function?.name||"";
+    let args={};try{args=JSON.parse(tc.function.arguments||"{}")}catch{/* Incomplete streamed arguments. */}
+    const destination=args.path||args.query||(Array.isArray(args.queries)?args.queries.join(" / "):"")||args.url||"";
     if(isServerToolName(name)){
-      upsertActivity(msg,`server-${tc.id||name}`,friendlyToolName(name),"running","OpenRouter Server Toolを実行中");
+      upsertActivity(msg,`server-${tc.id||name}`,friendlyToolName(name),"running",destination||"OpenRouter Server Toolを実行中");
       continue;
     }
     if(known.has(name)){
-      upsertActivity(msg,"call-"+(tc.id||name),friendlyToolName(name),"requested","NemotronがToolを要求");
+      upsertActivity(msg,"call-"+(tc.id||name),friendlyToolName(name),"requested",destination||"引数を受信中");
     }
   }
   if((partial.annotations||[]).some(a=>a?.url_citation?.url)){

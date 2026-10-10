@@ -20,6 +20,7 @@
 .cBtn{border-radius:8px}.stopBtn{width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:var(--panel2);color:var(--text);cursor:pointer}.stopBtn[hidden]{display:none}
 .sendBtn:disabled{opacity:.35;cursor:default}.jumpLatest{position:absolute;bottom:calc(var(--composer-height,150px) + 12px);left:50%;transform:translateX(-50%);border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:20px;padding:8px 14px;box-shadow:var(--shadow);font-size:12px;z-index:5;cursor:pointer}.jumpLatest[hidden]{display:none}
 .turnTimeline{display:flex;flex-direction:column;gap:14px}.timelineText{min-width:0}.executionRow{border:0;background:transparent;min-width:0;color:var(--muted)}
+.liveExecutionStatus{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:13px;color:var(--muted)}.liveExecutionStatus[hidden]{display:none}.liveExecutionStatus::before{content:'◌';width:18px;text-align:center;animation:pulse 1.2s infinite}
 .completedWork>summary{font-size:13px;color:var(--muted);cursor:pointer;padding:4px 0}.completedWork>.executionRow{margin:8px 0}
 .executionRow>summary{list-style:none;display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;line-height:1.6;padding:3px 0}.executionRow>summary::-webkit-details-marker{display:none}
 .executionRow>summary::after{content:'›';margin-left:auto;color:var(--muted)}.executionRow[open]>summary::after{transform:rotate(90deg)}
@@ -39,3 +40,4 @@ button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px soli
 @media(max-width:1050px){:root{--play:46vw}.content.withPlay{grid-template-columns:minmax(300px,1fr) var(--play)}}
 @media(max-width:760px){.chatScroll{padding:20px 16px}.composerWrap{padding:8px 10px max(10px,env(safe-area-inset-bottom))}.thread{gap:26px}.content.withPlay{grid-template-columns:1fr}.content.withPlay .chatPane{display:none}.content.withPlay .playground{display:flex}.quickModel{max-width:180px}.message.user{max-width:92%}.topbar{padding:0 10px}.topRight #exportBtn{display:none}.playBody{grid-template-columns:110px minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){.executionRow[data-state=running] .executionGlyph{animation:none}}
+@media(prefers-reduced-motion:reduce){.liveExecutionStatus::before{animation:none}}

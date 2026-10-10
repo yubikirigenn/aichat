@@ -23,10 +23,12 @@ function turnTimeline(msg){
 }
 function createTurnView(target){
   const bubble=target.querySelector(".bubble");
+  const status=document.createElement("div");status.className="liveExecutionStatus";status.hidden=true;
+  status.setAttribute("role","status");status.setAttribute("aria-live","polite");
   const timeline=document.createElement("div");timeline.className="turnTimeline";
   const footer=document.createElement("div");footer.className="turnFooter";
-  bubble.append(timeline,footer);
-  const view={timeline,footer,entries:new Map()};target.turnView=view;return view;
+  bubble.append(timeline,status,footer);
+  const view={timeline,status,footer,entries:new Map()};target.turnView=view;return view;
 }
 function updateTurnHTML(node,html){
   if(node.renderedHTML===html)return;
@@ -50,6 +52,10 @@ function makeExecutionRow(kind){
 function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
   target.displayMessage=msg;target.displayStreaming=streaming;
   const view=target.turnView||createTurnView(target);
+  const pending=(msg.activity||[]).filter(a=>["running","requested"].includes(a.status));
+  const waiting=streaming&&!pending.some(a=>!/^model-round-/.test(a.id));
+  view.status.hidden=!waiting;
+  if(waiting)view.status.textContent="応答を待っています";
   for(const item of turnTimeline(msg)){
     const activity=item.kind==="activity"?(msg.activity||[]).find(a=>a.id===item.id):null;
     // Model rounds are implementation detail, not another "answer generated" row.

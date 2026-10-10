@@ -21,6 +21,20 @@ test("chat view script parses and preserves text segments across tool rounds",()
   assert.deepEqual(Array.from(legacy,e=>e.kind),["reasoning","tool","text"]);
 });
 
+test("partial tool activity retains streamed targets before execution",()=>{
+  const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+  const {syncPartialToolActivity}=runInNewContext(html.slice(html.indexOf("function upsertActivity("),html.indexOf("function chartColor("))+";({syncPartialToolActivity})",{
+    nowISO:()=>"test",functionTools:[],webFunctionTools:[{function:{name:"web_search"}}],friendlyToolName:name=>name,isServerToolName:name=>name.startsWith("openrouter:"),
+  });
+  const msg={timeline:[]};
+  syncPartialToolActivity(msg,{tool_calls:[{id:"search",function:{name:"web_search",arguments:'{"queries":['}}]});
+  assert.equal(msg.activity[0].detail,"引数を受信中");
+  syncPartialToolActivity(msg,{tool_calls:[{id:"search",function:{name:"web_search",arguments:'{"queries":["Gemini API","無料枠"]}'}}]});
+  assert.equal(msg.activity[0].detail,"Gemini API / 無料枠");assert.equal(msg.activity[0].status,"requested");assert.equal(msg.timeline.length,1);
+  syncPartialToolActivity(msg,{tool_calls:[{id:"native",function:{name:"openrouter:web_fetch",arguments:'{"url":"https://ai.google.dev/"}'}}]});
+  assert.equal(msg.activity[1].detail,"https://ai.google.dev/");assert.equal(msg.activity[1].status,"running");
+});
+
 test("browser: stable streaming, real generation flow, scrolling and responsive panels",{skip:!process.env.CHAT_UI_BROWSER},async()=>{
   const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||"playwright");
   const {spawn}=await import("node:child_process");const {once}=await import("node:events");
@@ -174,10 +188,13 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       els.prompt.value="停止テスト";void sendMessage();
     });
     await page.waitForFunction(()=>!document.querySelector("#stopBtn").hidden);
+    assert.equal(await page.locator(".liveExecutionStatus:visible").count(),1);
+    assert.equal(await page.locator(".liveExecutionStatus:visible").textContent(),"応答を待っています");
     assert.equal(await page.locator("#sendBtn").isDisabled(),true);
     await page.locator("#prompt").fill("次の下書き");await page.locator("#prompt").press("Control+Enter");
     assert.equal(await page.evaluate(()=>running),true);
     await page.locator("#stopBtn").click();await page.waitForFunction(()=>!running);
+    assert.equal(await page.locator(".liveExecutionStatus:visible").count(),0);
     assert.equal(await page.locator("#prompt").inputValue(),"次の下書き");
     await page.evaluate(()=>{
       window.savedFetchForTest=window.fetch;window.pendingReadsForTest=0;window.cancelledReadsForTest=0;
@@ -189,6 +206,9 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       els.prompt.value="読取中の停止テスト";void sendMessage();
     });
     await page.waitForFunction(()=>window.pendingReadsForTest===2);
+    assert.equal(await page.locator('.executionRow[data-state="running"] .executionLabel').count(),2);
+    assert.match(await page.locator('.executionRow[data-state="running"] .executionLabel').first().textContent(),/Webページを読み込んでいます.*https:\/\/example.com\/a/);
+    assert.equal(await page.locator(".liveExecutionStatus:visible").count(),0);
     await page.locator("#stopBtn").click();await page.waitForFunction(()=>!running);
     const stopped=await page.evaluate(async()=>{
       window.fetch=window.savedFetchForTest;
