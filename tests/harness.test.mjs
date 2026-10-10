@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const source=readFileSync(new URL("../public/harness.js",import.meta.url),"utf8");
-const h=runInNewContext(source+";({runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,searchStoredResult,conversationWindow})",{DOMException});
+const h=runInNewContext(source+";({runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
 const call=(name,id)=>({id,function:{name,arguments:JSON.stringify({id})}});
 test("read-only tools run in parallel but writes and planner updates are ordered barriers",async()=>{
   let active=0,peak=0;const events=[];
@@ -68,4 +68,26 @@ test("current-turn compaction preserves pairs, latest results, signatures and sa
   assert.equal(JSON.stringify(messages),original);assert.equal(window.messages.at(-1).content,messages.at(-1).content);
   for(let i=1;i<window.messages.length;i+=2){assert.equal(window.messages[i].tool_calls[0].id,window.messages[i+1].tool_call_id);assert.equal(window.messages[i].tool_calls[0].extra_content.google.thought_signature,"sig");assert.equal(window.messages[i].reasoning_details[0].signature,"signed")}
   assert.ok(window.messages.some(m=>m.content.includes("history_message_index")));
+});
+test("interrupted checkpoints retain completed results and unknown operations across reload and continuation",()=>{
+  const chat={messages:[{role:"user",content:"ファイルを編集して",at:"first"}],plan:{goal:"編集",steps:[{status:"pending"}]}};
+  chat.resumeState=h.beginResumeState(chat);
+  h.checkpointTool(chat.resumeState,call("workspace_edit_file","write"),"write",{ok:true,path:"app.js"});
+  h.checkpointTool(chat.resumeState,call("web_fetch","read"),"read",{ok:true,result_ref:"result-read",content_excerpt:"取得情報"});
+  h.checkpointTool(chat.resumeState,call("workspace_delete_file","unknown"),"unknown");
+  chat.resumeState.status="interrupted";chat.resumeState.reason="停止";
+  const restored=JSON.parse(JSON.stringify(chat));restored.messages.push({role:"assistant",content:"",error:"停止"},{role:"user",content:"続けて",at:"next"});
+  restored.resumeState=h.beginResumeState(restored);
+  assert.equal(restored.resumeState.task,"ファイルを編集して");assert.equal(restored.resumeState.operations.length,3);
+  const context=h.resumeContext(restored);assert.match(context,/result-read/);assert.match(context,/workspace_delete_file/);assert.match(context,/実行結果不明/);assert.match(context,/完了済み操作を繰り返さず/);
+  restored.messages[restored.resumeState.sourceIndex].content="編集された指示";
+  assert.equal(h.resumeContext(restored),"");
+});
+test("a write completed immediately before stop is recorded before cancellation propagates",async()=>{
+  const controller=new AbortController();const recorded=[];let writes=0;
+  await assert.rejects(h.runToolBatch([call("workspace_edit_file","done"),call("workspace_delete_file","next")],{
+    signal:controller.signal,execute:async c=>{writes++;controller.abort();return {result:{ok:true,path:"file.js"}}},
+    onFinish:async(c,outcome)=>recorded.push({id:c.id,ok:outcome.result.ok}),
+  }),e=>e.name==="AbortError");
+  assert.equal(writes,1);assert.equal(recorded[0].id,"done");assert.equal(recorded[0].ok,true);
 });

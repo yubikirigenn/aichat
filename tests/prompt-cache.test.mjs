@@ -16,6 +16,7 @@ function promptHarness(webSearchProvider="legacy"){
     functionTools:[{type:"function",function:{name:"current_datetime"}}],webFunctionTools:[{type:"function",function:{name:"web_search"}}],
     selectedModel:()=>({provider:"openrouter"}),clamp:(x,min,max)=>Math.min(max,Math.max(min,x)),
     webSearchProvider,
+    resumeContext:()=>"",
     conversationWindow:messages=>({messages,omitted,over_budget:false}),safeImageDataUrl:()=>false,
   });
   return {...fn,setOmitted:value=>omitted=value};

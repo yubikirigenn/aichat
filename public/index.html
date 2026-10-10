@@ -1565,7 +1565,8 @@ ${settings.systemPrompt?`\nユーザー追加System Prompt:\n${settings.systemPr
 }
 function apiMessages(c,webRecoveryGuidance=""){
   const baseSystemPrompt=buildSystemPrompt();
-  const window=conversationWindow(c.messages,Math.max(16000,240000-baseSystemPrompt.length-JSON.stringify(buildTools()).length));
+  const resume=resumeContext(c);
+  const window=conversationWindow(c.messages,Math.max(16000,240000-baseSystemPrompt.length-JSON.stringify(buildTools()).length-resume.length));
   if(window.over_budget)throw new Error("大きな入力または直近のTool呼び出しがコンテキスト保護上限を超えました。入力・Tool引数を分割してください。会話と取得結果は保持されています。");
   const messages=[{role:"system",content:baseSystemPrompt},...window.messages.filter(m=>["user","assistant","tool"].includes(m.role)).map(m=>{
     const x={role:m.role,content:m.content??""};
@@ -1580,7 +1581,7 @@ function apiMessages(c,webRecoveryGuidance=""){
   })];
   // Keep volatile state at the end; never rewrite the reusable system/history prefix.
   const state=[window.omitted?`[コンテキスト管理] 過去ログのメッセージ0〜${window.omitted-1}は省略しています。必要な内容はchat_history_readで原文を確認してください。`:"",window.compacted?"[コンテキスト管理] 作業履歴の古い本文・推論表示を送信時だけ省略しました。省略された事実を推測せず、result_refまたはhistory_message_indexで必要な内容を再読取してください。":"",webRecoveryGuidance?`[ツール復旧指示]\n${webRecoveryGuidance}`:""].filter(Boolean).join("\n\n");
-  if(state)messages.push({role:"user",content:`[ハーネス状態]\n${state}`});
+  if(state||resume)messages.push({role:"user",content:`[ハーネス状態]\n${[state,resume].filter(Boolean).join("\n\n")}`});
   return messages;
 }
 function buildTools(includeServerWeb=true){
@@ -1935,6 +1936,7 @@ async function sendMessage(){
   }
   c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();renderPlan();
   const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();syncQuickControls();setStatus(heavy?"計画を準備中":"生成中","busy");
+  c.resumeState=beginResumeState(c);persistChats();
   const uiMsg={role:"assistant",content:"",timeline:[],_streaming:true,toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
   let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
   const cacheUsage={prompt_tokens:0,cached_tokens:0,cache_write_tokens:0,reported_rounds:0,total_rounds:0};
@@ -1990,6 +1992,8 @@ async function sendMessage(){
           signal:abortController.signal,tracker:failureTracker,
           onStart:async(call,index)=>{
             const activityId="call-"+(call.id||rounds+"-"+index);activityIds.set(index,activityId);
+            c.resumeState.last_progress=String(uiMsg.content||"").slice(-3000);
+            checkpointTool(c.resumeState,call,`${start}:${activityId}`);persistChats();
             let detail="";try{const a=JSON.parse(call.function.arguments||"{}");detail=a.path||a.query||(Array.isArray(a.queries)?a.queries.join(" / "):"")||a.url||a.title||a.goal||""}catch{}
             upsertActivity(uiMsg,activityId,friendlyToolName(call.function.name),"running",detail||"Toolを実行中");
             renderStreamingAssistant(node,uiMsg);
@@ -2005,6 +2009,7 @@ async function sendMessage(){
             if(failed)corrections.push(raw.next_action||raw.recovery_hint||"失敗したToolの引数や手段を変更してください。");
             outcome.result=/^tool_result_(read|search)$/.test(call.function.name)?raw:await compactToolObservation(raw,c.id);
             const result=outcome.result,activityId=activityIds.get(index);
+            checkpointTool(c.resumeState,call,`${start}:${activityId}`,result);persistChats();
             let args={};try{args=JSON.parse(call.function.arguments||"{}")}catch{}
             const event=outcome.event||{name:call.function.name,at:nowISO(),ms:0,detail:{arguments:args}};
             event.ok=!toolFailed(call,result);event.detail.result=result;
@@ -2030,6 +2035,7 @@ async function sendMessage(){
       c.messages.push(final);c.updatedAt=nowISO();
       // Tool結果は最終回答へ要約されたので、次ターンの無駄なトークン消費と古いファイル内容の混入を防ぐため破棄。
       c.messages=c.messages.filter(m=>!m.internal);
+      delete c.resumeState;
       finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();renderPlan();setStatus("完了","ok");void generateChatTitle(c,selected);return;
     }
     throw new Error(`Tool Callingが最大${settings.maxRounds}ラウンドに達しました。`);
@@ -2044,6 +2050,7 @@ async function sendMessage(){
       },120);
     }else{uiMsg.error=e.message||String(e);setStatus("エラー","err")}
     const final={role:"assistant",content:uiMsg.content||"",timeline:uiMsg.timeline,reasoning:uiMsg.reasoning||"",toolEvents:uiMsg.toolEvents,activity:structuredCloneSafe(uiMsg.activity),error:uiMsg.error,at:nowISO(),planSnapshot:structuredCloneSafe(c.plan),thinkingOpen:uiMsg.thinkingOpen,meta:{cost:totalCost,tokens:totalOut,rounds,ms:Date.now()-start,webFallback:!!uiMsg.webFallback}};
+    c.resumeState.status="interrupted";c.resumeState.reason=uiMsg.error;c.resumeState.last_progress=String(uiMsg.content||"").slice(-3000);
     c.messages.push(final);c.updatedAt=nowISO();c.messages=c.messages.filter(m=>!m.internal);finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();
   }finally{
     running=false;abortController=null;renderEditMode();syncQuickControls();

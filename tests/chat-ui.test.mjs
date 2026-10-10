@@ -238,6 +238,26 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       window.fetch=window.savedFetchForTest;
       return window.cancelledReadsForTest===2&&!(await getFile("must-not-exist.txt"));
     });assert.equal(stopped,true);
+    // Completed writes survive an error/reload and reach the next API request.
+    await page.evaluate(async()=>{
+      let round=0;
+      streamRound=async()=>{
+        if(++round===1)return {msg:{role:"assistant",content:"ファイルを作成します",tool_calls:[{id:"resume-write",function:{name:"workspace_write_file",arguments:JSON.stringify({path:"resume-check.txt",content:"created once"})}}]}};
+        throw new Error("resume test interruption");
+      };
+      els.prompt.value="再開の検証";await sendMessage();
+    });
+    assert.equal(await page.evaluate(()=>activeChat().resumeState.status),"interrupted");
+    assert.equal(await page.evaluate(()=>activeChat().resumeState.operations.some(op=>op.name==="workspace_write_file"&&op.status==="completed")),true);
+    await page.reload();await page.waitForFunction(()=>db?.version===2);
+    const resumed=await page.evaluate(async()=>{
+      document.querySelector("#settingsDialog").close();setApiKey("test-password",false);
+      let context="";
+      streamRound=async messages=>{context=messages.map(m=>m.content).filter(v=>typeof v==="string").join("\n");return {msg:{role:"assistant",content:"作成済みファイルを確認して続けます。"}}};
+      els.prompt.value="続きから再開して";await sendMessage();
+      return {hasRecord:context.includes("中断・作業引継ぎ記録")&&context.includes("resume-check.txt")&&context.includes("completed"),cleared:!activeChat().resumeState,content:(await getFile("resume-check.txt")).content};
+    });
+    assert.equal(resumed.hasRecord,true);assert.equal(resumed.cleared,true);assert.equal(resumed.content,"created once");
     assert.deepEqual(errors,[]);
     if(process.env.CHAT_UI_SCREENSHOT)await page.screenshot({path:process.env.CHAT_UI_SCREENSHOT});
   }finally{await browser?.close();server.kill();await once(server,"exit")}
