@@ -258,6 +258,24 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       return {hasRecord:context.includes("中断・作業引継ぎ記録")&&context.includes("resume-check.txt")&&context.includes("completed"),cleared:!activeChat().resumeState,content:(await getFile("resume-check.txt")).content};
     });
     assert.equal(resumed.hasRecord,true);assert.equal(resumed.cleared,true);assert.equal(resumed.content,"created once");
+    const stagnation=await page.evaluate(async()=>{
+      settings.maxRounds=16;let rounds=0,redirected=false,finalized=false;
+      streamRound=async(messages,forced,onUpdate,onEvent,options)=>{
+        rounds++;redirected||=messages.some(m=>typeof m.content==="string"&&m.content.includes("進展のない調査"));
+        if(options.finalize){finalized=true;return {msg:{role:"assistant",content:"開始ボタンを押した後も開始画面が残りますか？"}}}
+        return {msg:{role:"assistant",content:"確認します",tool_calls:[{id:"stale-"+rounds,function:{name:"workspace_preview",arguments:'{"action":"inspect"}'}}]}};
+      };
+      els.prompt.value="挙動を調べて";await sendMessage();
+      return {rounds,redirected,finalized,content:activeChat().messages.at(-1).content,state:activeChat().resumeState?.status,status:els.statusText?.textContent};
+    });
+    assert.equal(stagnation.rounds,7);assert.equal(stagnation.redirected,true);assert.equal(stagnation.finalized,true);
+    assert.match(stagnation.content,/開始画面/);assert.equal(stagnation.state,"interrupted");
+    const closure=await page.evaluate(async()=>{
+      let requested=false;streamRound=async()=>{requested=true;throw new Error("must not resume old work")};
+      els.prompt.value="実装は終わったんじゃ?もう大丈夫ですよ";await sendMessage();
+      return {requested,state:activeChat().resumeState,content:activeChat().messages.at(-1).content};
+    });
+    assert.equal(closure.requested,false);assert.equal(closure.state,undefined);assert.match(closure.content,/作業はここで終了/);
     const savedNotes=await page.evaluate(async()=>{
       let round=0;streamRound=async()=>{
         if(++round===1)return {msg:{role:"assistant",content:"",tool_calls:[{id:"notes",function:{name:"task_checkpoint",arguments:JSON.stringify({findings:["script loading confirmed"],ruled_out:["syntax problem"],next_steps:["inspect runtime"]})}}]}};

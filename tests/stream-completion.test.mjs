@@ -45,5 +45,22 @@ test("proxy heartbeat comments do not reset the model's idle deadline",async()=>
   },cancel:async()=>{cancelled=true},releaseLock(){}};
   const run=request("",{Date:{now:()=>clock},fetchChatResponse:async()=>({body:{getReader:()=>reader}}),setTimeout:(fn,delay)=>{delays.push(delay);return setTimeout(fn,Math.min(delay,5))}});
   await assert.rejects(run({}),/90秒/);
-  assert.deepEqual(delays,[90000,60000,30000,1]);assert.equal(cancelled,true);
+  assert.deepEqual(delays,[90000,60000,30000]);assert.equal(cancelled,true);
+});
+test("ongoing Thinking cannot extend a single stream past the absolute deadline",async()=>{
+  let clock=0,cancelled=false;
+  const reader={read:async()=>{clock+=60000;return {value:new TextEncoder().encode(event(choice({reasoning:"more thinking"}))),done:false}},cancel:async()=>{cancelled=true},releaseLock(){}};
+  const run=request("",{Date:{now:()=>clock},fetchChatResponse:async()=>({body:{getReader:()=>reader}})});
+  await assert.rejects(run({}),e=>/3分/.test(e.message)&&e.partialMessage.reasoning==="more thinking".repeat(3));assert.equal(cancelled,true);
+});
+test("stagnation finalization disables tools and limits response generation",async()=>{
+  let captured;
+  const roundSource=html.slice(html.indexOf("async function streamRound("),html.indexOf("async function sendMessage("));
+  const run=runInNewContext(roundSource+";streamRound",{
+    getApiKey:()=>"test",selectedModel:()=>({provider:"groq",id:"test",supportsTools:true}),activeChat:()=>({id:"chat"}),
+    settings:{temperature:0.4,maxTokens:16384,reasoning:true},buildTools:()=>[{function:{name:"web_search"}}],
+    performStreamRequest:async body=>{captured=body;return {msg:{content:"question"}}},
+  });
+  await run([],false,null,null,{finalize:true,forceTool:"web_search"});
+  assert.equal(captured.tools,undefined);assert.equal(captured.tool_choice,undefined);assert.equal(captured.max_tokens,2048);assert.equal(captured.reasoning.enabled,false);
 });

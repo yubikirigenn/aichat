@@ -1293,6 +1293,9 @@ window.addEventListener("message",event=>{
   if(data.kind==="ready")previewDiagnostics.status="loaded";
 });
 async function buildPreview(){
+  // Explicit reload supersedes pending edit refreshes; do not reset the page
+  // (and erase the user's click evidence) again a few hundred ms afterwards.
+  clearTimeout(previewTimer);
   let entry=await getFile("index.html");
   if(!entry && currentFilePath?.toLowerCase().endsWith(".html"))entry=await getFile(currentFilePath);
   if(!entry){previewRunId="";previewDiagnostics={status:"no_entry",events:[],missing:[]};els.previewFrame.srcdoc=`<div style="font:14px system-ui;padding:24px;color:#555">index.html またはHTMLファイルを作成するとPreviewできます。</div>`;return}
@@ -1421,7 +1424,7 @@ async function executeTool(call,onEvent=()=>{}){
       const p=normalizePath(args.path),old=await getFile(p);
       if(old&&!args.overwrite)throw new Error("File exists. Use workspace_edit_file instead: "+p);
       if(old&&args.overwrite&&!confirm(`Playgroundの「${p}」を全文置換しますか？`))throw Object.assign(new Error("全文置換はユーザーが許可しませんでした。"),{code:"user_denied",retryable:false,next_action:"再試行せず既存ファイルを維持してください。"});
-      await putFile(p,args.content,{createOnly:!args.overwrite});result={path:p,written_bytes:bytes(args.content),created:!old};
+      await putFile(p,args.content,{createOnly:!args.overwrite});result={path:p,written_bytes:bytes(args.content),created:!old,changed:!old||old.content!==args.content};
       await renderFiles();if(currentFilePath===p)await openFile(p);schedulePreview();
     }else if(name==="workspace_edit_file"){
       const p=normalizePath(args.path),f=await getFile(p);if(!f)throw new Error("File not found: "+p);
@@ -1434,11 +1437,11 @@ async function executeTool(call,onEvent=()=>{}){
         if(r.replace_all)content=content.split(r.old_text).join(r.new_text);else content=content.replace(r.old_text,r.new_text);
         changes.push({matches:r.replace_all?count:1,removed_chars:r.old_text.length,added_chars:r.new_text.length});
       }
-      await putFile(p,content);result={path:p,changes,new_size:bytes(content)};
+      await putFile(p,content);result={path:p,changes,new_size:bytes(content),changed:content!==f.content};
       await renderFiles();if(currentFilePath===p)await openFile(p);schedulePreview();
     }else if(name==="workspace_append_file"){
       const p=normalizePath(args.path),f=await getFile(p);if(!f)throw new Error("File not found: "+p);
-      await putFile(p,f.content+args.content);result={path:p,appended_bytes:bytes(args.content)};
+      await putFile(p,f.content+args.content);result={path:p,appended_bytes:bytes(args.content),changed:!!args.content};
       await renderFiles();if(currentFilePath===p)await openFile(p);schedulePreview();
     }else if(name==="workspace_search_files"){
       const q=String(args.query),max=clamp(Number(args.max_results||30),1,100),prefix=args.path_prefix?normalizePath(args.path_prefix):null;
@@ -1560,6 +1563,8 @@ Playgroundルール:
 - workspace_check_fileは構文検査のみで、ボタンや実行時の動作成功を保証しません。ブラウザの不具合はworkspace_preview(reload)で再読込し、inspectで実行時エラー・欠落ファイル・利用者の操作記録を確認してください。loadedだけで修正成功と断定しないでください。
 - 同じ読取を繰り返すだけで止まらず、既存の取得結果から仮説を立て、別範囲・別手段の検証または必要な差分編集へ進めてください。tool_result_read/searchは既定でJSONエスケープ前の本文を扱い、同じviewのoffsetを使います。
 - 方針変更や長い調査の節目にtask_checkpointで確認済み事実・棄却した仮説・次の手順を保存してください。推測を確認済みと偽らないでください。再開時は引継ぎ記録を読み、完了済み操作をやり直さないでください。
+- 検証は判断を変えられるものに限定してください。確認済みの関数を読み直すだけの検証や、原因不明のままの予防的な書換えは避けます。静的確認で絞れない場合は実際の操作後の状態を確認し、ツールで確認できなければ利用者に必要な観測を一度だけ質問してください。無期限に再調査しないでください。
+- 最新の利用者が「もう大丈夫」「作業不要」など終了を伝えた場合、過去の未完了タスクを理由に再検証せず終了してください。「直りましたか？」のような確認質問とは区別してください。
 - ユーザーが「作る」「直す」「編集する」と依頼した場合、コードを回答欄に貼るだけでなくPlaygroundのファイルを実際に更新してください。
 - 不要なファイル削除はユーザーが明示した場合か、あなた自身が今回作った一時ファイルに限ります。
 
@@ -1735,7 +1740,8 @@ async function performStreamRequest(body,onUpdate){
   const msg={role:"assistant",content:"",reasoning:"",reasoning_details:[],annotations:[],tool_calls:[]};
   // Some compatible APIs omit (or reuse) index. Never merge distinct call IDs.
   const toolById=new Map(),toolByIndex=new Map();
-  let usage=null,finish=null,sawDone=false,ended=false,lastDataAt=Date.now();
+  const streamStartedAt=Date.now();
+  let usage=null,finish=null,sawDone=false,ended=false,lastDataAt=streamStartedAt;
   const consume=raw=>{
       const line=raw.trim();
       if(!line.startsWith("data:"))return;
@@ -1797,7 +1803,10 @@ async function performStreamRequest(body,onUpdate){
   try{
     while(!sawDone){
       let timer;
-      const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("生成ストリームの応答が90秒間ありません。途中結果を保存しました。続きから再開してください。")),Math.max(1,90000-(Date.now()-lastDataAt)))});
+      const idleRemaining=90000-(Date.now()-lastDataAt),totalRemaining=180000-(Date.now()-streamStartedAt);
+      const timeoutError=()=>new Error(totalRemaining<=idleRemaining?"1回の生成が3分を超えたため停止しました。途中結果を保存しています。必要な確認事項を絞るかモデルを変更してください。":"生成ストリームの応答が90秒間ありません。途中結果を保存しました。続きから再開してください。");
+      if(Math.min(idleRemaining,totalRemaining)<=0)throw timeoutError();
+      const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(timeoutError()),Math.min(idleRemaining,totalRemaining))});
       let chunk;try{chunk=await Promise.race([reader.read(),timeout])}finally{clearTimeout(timer)}
       if(chunk.done){ended=true;buf+=dec.decode();if(buf.trim())consume(buf);break}
       buf+=dec.decode(chunk.value,{stream:true});
@@ -1876,7 +1885,7 @@ async function retryWithClientWebTools(baseBody,onUpdate,onEvent,reason="server-
   throw lastError||new Error("Web検索の復旧に失敗しました。");
 }
 
-async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClientWeb=false,forceTool=null}={}){
+async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClientWeb=false,forceTool=null,finalize=false}={}){
   const key=getApiKey();
   if(!key)throw new Error("アクセスパスワードが未入力です。設定から入力してください。");
 
@@ -1897,6 +1906,7 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClie
     baseBody.tool_choice=forceTool?{type:"function",function:{name:forceTool}}:forcedPlan?{type:"function",function:{name:"plan_create"}}:"auto";
   }
   if(settings.reasoning)baseBody.reasoning={enabled:true,exclude:false};
+  if(finalize){delete baseBody.tools;delete baseBody.tool_choice;delete baseBody.plugins;baseBody.reasoning={enabled:false};baseBody.max_tokens=Math.min(baseBody.max_tokens,2048)}
   const hasServerSearch=selected.provider==="openrouter"&&settings.web&&!forceClientWeb&&hasOpenRouterWebSearch(baseBody);
 
   let result;
@@ -1986,13 +1996,19 @@ async function sendMessage(){
     c.messages.push({role:"user",content:text,images,at:nowISO()});
   }
   c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();renderPlan();
+  if(!images.length&&isTaskClosure(text)){
+    delete c.resumeState;
+    if(c.plan?.status==="running")c.plan.status="stopped";
+    c.messages.push({role:"assistant",content:"承知しました。作業はここで終了します。",at:nowISO()});
+    persistChats();renderThread({forceBottom:true});renderChatList();renderPlan();setStatus("終了","ok");return;
+  }
   const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();syncQuickControls();setStatus(heavy?"計画を準備中":"生成中","busy");
   c.resumeState=beginResumeState(c);persistChats();
   const uiMsg={role:"assistant",content:"",timeline:[],_streaming:true,toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
   let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
   const cacheUsage={prompt_tokens:0,cached_tokens:0,cache_write_tokens:0,reported_rounds:0,total_rounds:0};
   let webRecoveryGuidance="",webRecoveryAttempts=0,forceNextWebSearch=false,useClientWebFallback=false,emptyContinuations=0;
-  const failureTracker=createToolFailureTracker(c.resumeState.operations);let toolCallsUsed=0;
+  const failureTracker=createToolFailureTracker(c.resumeState.operations),investigation=createInvestigationTracker(c.resumeState.investigation);let toolCallsUsed=0,finalizeInvestigation=false;
   try{
     while(rounds<Number(settings.maxRounds)){
       rounds++;setStatus(rounds===1&&forcedPlan?"計画を作成中":`実行中 · round ${rounds}`,"busy");
@@ -2010,7 +2026,7 @@ async function sendMessage(){
       },ev=>{
         upsertActivity(uiMsg,ev.id,ev.name,ev.status,ev.detail);
         scheduleStreamingAssistantRender(node,uiMsg);
-      },{forceClientWeb:useClientWebFallback,forceTool:retryWebSearch?"web_search":null});
+      },{forceClientWeb:useClientWebFallback,forceTool:retryWebSearch?"web_search":null,finalize:finalizeInvestigation});
       flushStreamingAssistantRender(node,uiMsg);
       recordTurnText(uiMsg,"reasoning",getReasoningText(msg),rounds);
       recordTurnText(uiMsg,"text",msg.content||"",rounds);
@@ -2033,6 +2049,7 @@ async function sendMessage(){
         }
       }
       if(clientToolCalls.length){
+        if(finalizeInvestigation)throw new Error("新しい情報が増えない調査を停止しました。モデルが確認質問ではなくToolを再要求したため、追加実行せず作業記録を保存しています。");
         const assistantForContext={role:"assistant",content:msg.content||"",tool_calls:clientToolCalls,internal:true};
         if(msg.reasoning)assistantForContext.reasoning=msg.reasoning;if(msg.reasoning_details)assistantForContext.reasoning_details=msg.reasoning_details;
         c.messages.push(assistantForContext);
@@ -2060,6 +2077,7 @@ async function sendMessage(){
             if(failed)corrections.push(raw.next_action||raw.recovery_hint||"失敗したToolの引数や手段を変更してください。");
             outcome.result=/^tool_result_(read|search)$/.test(call.function.name)?raw:await compactToolObservation(raw,c.id);
             const result=outcome.result,activityId=activityIds.get(index);
+            investigation.observe(call,raw,result);c.resumeState.investigation=investigation.snapshot();
             checkpointTool(c.resumeState,call,`${start}:${activityId}`,result);persistChats();
             let args={};try{args=JSON.parse(call.function.arguments||"{}")}catch{}
             const event=outcome.event||{name:call.function.name,at:nowISO(),ms:0,detail:{arguments:args}};
@@ -2075,7 +2093,19 @@ async function sendMessage(){
         outcomes.forEach((outcome,index)=>{const call=clientToolCalls[index];c.messages.push({role:"tool",tool_call_id:call.id,name:call.function.name,content:JSON.stringify(outcome.result),internal:true})});
         if(anyFailedSearch&&webRecoveryAttempts<2){webRecoveryAttempts++;forceNextWebSearch=true;corrections.push("成功済みの検索は再実行せず、失敗・0件の検索語だけ修正してweb_searchを実行してください。")}
         webRecoveryGuidance=[...new Set(corrections)].join("\n");
-        if(failureTracker.blockedCount>=3)throw new Error("同じ読取・失敗の繰り返しを検出しました。途中の作業記録を保存しています。別の手段で検証するか、続きから再開してください。");
+        const progress=investigation.finishRound();
+        if(progress!=="continue"){
+          forceNextWebSearch=false;
+          webRecoveryGuidance+="\n[進展のない調査]\n既存の証拠の再確認が続いています。同じファイル・範囲・仮説を再読しないでください。実際の挙動など判断を変える別の証拠を取得できなければ、不足する観測を利用者へ具体的に一度質問して終了してください。構文成功を動作成功と偽らず、原因不明の予防的な変更も避けてください。";
+          if(progress==="finalize"){
+            finalizeInvestigation=true;
+            webRecoveryGuidance+="\n追加のTool実行は停止しています。これまでの確認済み事実と、続行に必要な確認質問を短く返してください。";
+          }
+        }
+        if(failureTracker.blockedCount>=3){
+          finalizeInvestigation=true;forceNextWebSearch=false;
+          webRecoveryGuidance+="\n同じ読取・失敗の反復で追加Toolを停止しました。既存の確認済み事実と不足する観測を短く伝えて終了してください。拒否済み操作の再許可を繰り返し求めないでください。";
+        }
         persistChats();continue;
       }
       if(!msg.content?.trim()){
@@ -2098,8 +2128,9 @@ async function sendMessage(){
       c.messages.push(final);c.updatedAt=nowISO();
       // Tool結果は最終回答へ要約されたので、次ターンの無駄なトークン消費と古いファイル内容の混入を防ぐため破棄。
       c.messages=c.messages.filter(m=>!m.internal);
-      delete c.resumeState;
-      finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();renderPlan();setStatus("完了","ok");void generateChatTitle(c,selected);return;
+      if(finalizeInvestigation){c.resumeState.status="interrupted";c.resumeState.reason="新しい情報が増えない調査を停止し、利用者の確認待ち"}
+      else delete c.resumeState;
+      finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();renderPlan();setStatus(finalizeInvestigation?"確認待ち":"完了","ok");void generateChatTitle(c,selected);return;
     }
     throw new Error(`Tool Callingが最大${settings.maxRounds}ラウンドに達しました。`);
   }catch(e){

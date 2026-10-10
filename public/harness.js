@@ -6,6 +6,66 @@ function stableToolKey(call) {
   return `${call.function?.name}:${args}`;
 }
 function toolFailed(call,result) { return result?.ok===false||(call.function?.name==="web_search"&&Number(result?.count??result?.results?.length??0)===0); }
+function isTaskClosure(text) {
+  const last=text.trim().replace(/[。！!\s]+$/g,"").split(/[。！？?!\n]/).at(-1).trim().replace(/^(?:はい|ありがとう(?:ございます)?)[、,]\s*/,"");
+  return /^(?:もう大丈夫(?:です(?:よ)?|だよ)?|ここまでで(?:大丈夫|結構)(?:です)?|作業を(?:終了|停止)してください|これ以上の作業は不要(?:です)?)$/.test(last);
+}
+function evidenceHash(text) {
+  let a=2166136261,b=5381;
+  for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);a=Math.imul(a^c,16777619);b=Math.imul(b,33)^c}
+  return `${text.length}:${a>>>0}:${b>>>0}`;
+}
+// Measures new observations, not verbosity, tool count or claimed plan progress.
+// Source-version aliases catch re-reads even when storage generates a new ref.
+function createInvestigationTracker(saved) {
+  saved||={};
+  const seen=new Set(saved.seen||[]),aliases=new Map(saved.aliases||[]),ranges=new Map(saved.ranges||[]);
+  let novel=false,stale=0;
+  const remember=value=>{const key=evidenceHash(JSON.stringify(value));if(seen.has(key))return false;seen.add(key);return true};
+  const range=(key,start,end)=>{
+    if(end<=start)return false;
+    const previous=ranges.get(key)||[];
+    const combined=[...previous,[start,end]].sort((a,b)=>a[0]-b[0]),merged=[];
+    for(const item of combined){const last=merged.at(-1);if(last&&item[0]<=last[1])last[1]=Math.max(last[1],item[1]);else merged.push([...item])}
+    const length=list=>list.reduce((sum,[a,b])=>sum+b-a,0);
+    ranges.set(key,merged);return length(merged)>length(previous);
+  };
+  const clean=value=>{
+    if(Array.isArray(value))return value.map(clean);
+    if(!value||typeof value!=="object")return value;
+    return Object.fromEntries(Object.keys(value).sort().filter(key=>!["at","updated_at","retrieved_at","elapsed_ms","ms","backend_timings","result_ref","runId","query","queries","search_query","next_action","verification"].includes(key)).map(key=>[key,clean(value[key])]));
+  };
+  return {
+    observe(call,raw,visible=raw){
+      const name=call.function?.name;let args={};try{args=JSON.parse(call.function.arguments||"{}")}catch{}
+      if(toolFailed(call,raw))return;
+      if(/^workspace_(write|edit|append|rename|delete)_file$/.test(name)){
+        if(raw.changed!==false)novel=true;return;
+      }
+      if(["task_checkpoint","plan_create","plan_update","plan_finish","current_datetime"].includes(name))return;
+      if(visible.ok===false)return;
+      let fresh=false;
+      if(typeof raw.content==="string"&&["workspace_read_file","web_fetch"].includes(name)){
+        const body=raw.full_content??raw.content,key=`source:${raw.path||raw.url}:${evidenceHash(body)}`;
+        if(visible.result_ref)aliases.set(visible.result_ref,key);
+        // Only credit what was actually sent to the model, not a stored full page.
+        if(visible.truncated){fresh=range(key,0,Math.min(2200,raw.content.length));fresh=range(key,Math.max(0,raw.content.length-400),raw.content.length)||fresh}
+        else fresh=range(key,0,raw.content.length);
+      }else if(name==="tool_result_read"){
+        const key=aliases.get(args.result_ref)||args.result_ref;
+        fresh=range(`${key}${raw.view==="json"?":json":""}`,raw.offset,raw.next_offset);
+      }else if(name==="workspace_preview"){
+        fresh=remember({preview:raw.entry,missing:raw.missing,events:(raw.events||[]).filter(e=>e.kind!=="ready").map(e=>({kind:e.kind,message:e.message,...(e.kind==="click"?{at:e.at}:{})}))});
+      }else if(name==="tool_result_search"){
+        const key=aliases.get(args.result_ref)||args.result_ref;
+        for(const match of raw.matches||[]){fresh=range(`${key}${raw.view==="json"?":json":""}`,match.offset,match.offset+match.excerpt.length)||fresh}
+      }else fresh=remember(clean(raw));
+      novel=fresh||novel;
+    },
+    finishRound(){stale=novel?0:stale+1;novel=false;return stale>=5?"finalize":stale>=3?"redirect":"continue"},
+    snapshot(){return {seen:[...seen].slice(-300),aliases:[...aliases].slice(-200),ranges:[...ranges].slice(-200)}},
+  };
+}
 function createToolFailureTracker(seed=[]) {
   const failures=new Map(),denied=new Set(),reads=new Map();let blocked=0;
   for(const item of seed){
@@ -147,7 +207,7 @@ function beginResumeState(chat) {
   const previous=validResumeState(chat),sourceIndex=chat.messages.findLastIndex(m=>m.role==="user"),source=chat.messages[sourceIndex];
   return {version:1,status:"running",sourceIndex,sourceAt:source?.at,sourceContent:source?.content,
     task:previous?.task||String(source?.content||"").slice(0,4000),operations:previous?.operations?.slice(-80)||[],
-    previous_stop:previous?.reason,last_progress:previous?.last_progress||"",notes:previous?.notes||null,at:Date.now()};
+    previous_stop:previous?.reason,last_progress:previous?.last_progress||"",notes:previous?.notes||null,investigation:previous?.investigation||null,at:Date.now()};
 }
 function checkpointTool(state,call,id,result) {
   let operation=state.operations.find(item=>item.id===id);
