@@ -34,7 +34,7 @@ function messageHistoryText(message,{compact=false}={}) {
   return text;
 }
 function savedChatSnapshot(chat){
-  const {liveTurn,...record}=chat;
+  const {liveTurn,recoveringRound,recoveringUi,runRound,...record}=chat;
   const messages=(chat.messages||[]).filter(m=>!m.internal);
   if(liveTurn)messages.push({...liveTurn,streamRenderFrame:0,_streaming:true});
   return {...record,messages};

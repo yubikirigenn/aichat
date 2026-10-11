@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
+import { createDetachedChat } from "./detached-chat.mjs";
 import { normalizeSearchOptions, runSearch, normalizeSearchQueries, runSearchBatch } from "./search.mjs";
 import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
 import { createXSearcher, normalizeXSearch } from "./x-search.mjs";
@@ -297,7 +298,7 @@ app.get("/api/models", (_req, res) => {
   });
 });
 
-app.post("/api/chat", async (req, res) => {
+async function handleChat(req, res) {
   const auth = authorizeRequest(req);
   if (!auth.ok) return sendAuthError(res, auth);
 
@@ -330,6 +331,7 @@ app.post("/api/chat", async (req, res) => {
     const upstream = await providerFetch(selected.provider, "/chat/completions", access.apiKey, {
       method: "POST",
       body: JSON.stringify(forwardedBody),
+      signal: req.detachedSignal,
     });
 
     if (!upstream.ok) {
@@ -382,7 +384,8 @@ app.post("/api/chat", async (req, res) => {
       proxy: true,
     });
   }
-});
+}
+app.post("/api/chat", createDetachedChat({handleChat,authorize:authorizeRequest}));
 
 function providerCheckEndpoint(providerId) {
   return providerId === "openrouter" ? "/key" : "/models";

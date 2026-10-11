@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 const html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
-const source=html.slice(html.indexOf("async function performStreamRequest("),html.indexOf("async function retryWithClientWebTools("));
+const source=html.slice(html.indexOf("async function consumeChatStream("),html.indexOf("async function retryWithClientWebTools("));
 const event=data=>"data: "+JSON.stringify(data)+"\n\n";
 const choice=(delta,finish_reason)=>({choices:[{delta,finish_reason}]});
 function request(body,extra={}){
-  return runInNewContext(source+";performStreamRequest",{setTimeout,clearTimeout,TextDecoder,getApiKey:()=>"test",abortController:new AbortController(),fetchChatResponse:async()=>new Response(body),serverToolFailure:()=>false,hasOpenRouterWebSearch:()=>false,...extra});
+  return runInNewContext(source+";(async(body,onUpdate)=>consumeChatStream(await fetchChatResponse(body),body,onUpdate))",{setTimeout,clearTimeout,TextDecoder,getApiKey:()=>"test",abortController:new AbortController(),fetchChatResponse:async()=>new Response(body),serverToolFailure:()=>false,hasOpenRouterWebSearch:()=>false,...extra});
 }
 test("SSE flushes the final unterminated data line and accepts explicit stop without DONE",async()=>{
   const r=await request(event(choice({content:"one"}))+"data: "+JSON.stringify(choice({content:"two"},"stop")))({});

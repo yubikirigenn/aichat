@@ -405,6 +405,7 @@ html,body{background:var(--bg);color:var(--text)}
 <script src="/chat-ui.js"></script>
 <script src="/harness.js"></script>
 <script src="/history.js"></script>
+<script src="/reconnect.js"></script>
 <script>
 "use strict";
 
@@ -1754,8 +1755,28 @@ async function fetchChatResponse(body,{signal,fetchImpl=fetch,wait}={}){
   }
 }
 async function performStreamRequest(body,onUpdate){
-  const key=getApiKey();
-  const res=await fetchChatResponse(body,{signal:abortController.signal});
+  const chat=activeChat(),recovery=chat?.recoveringRound;
+  if(recovery){body=recovery.body;delete chat.recoveringRound}
+  const id=recovery?.id||deliveryId(),signal=abortController.signal;
+  if(chat){chat.liveTurn.turnId||=deliveryId();chat.pendingRound={id,body:structuredCloneSafe(body),turnId:chat.liveTurn.turnId,round:chat.runRound||1,internalMessages:structuredCloneSafe(chat.messages.filter(m=>m.internal))};await persistChats()}
+  if(chatSaveError){if(chat)delete chat.pendingRound;throw new Error("再接続情報を安全に保存できないため、生成を開始しませんでした。履歴を書き出し、ブラウザの保存容量を確認してください。")}
+  const request=(payload,options)=>fetch(API_URL,{method:"POST",headers:proxyHeaders(),body:JSON.stringify({...payload,access_password:getApiKey()}),...options});
+  const cancel=()=>{void request({delivery:{id,action:"cancel"}},{signal:AbortSignal.timeout(5000)}).catch(()=>{})};
+  signal.addEventListener("abort",cancel,{once:true});
+  let completed=false;
+  try{
+    const res=await openReconnectStream(body,{id,recover:Boolean(recovery),signal,request,onState:state=>setStatus(state==="reconnecting"?"通信待ち · 自動再接続中":"生成中","busy")});
+    const result=await consumeChatStream(res,body,onUpdate);completed=true;return result;
+  }catch(error){
+    if(error.httpStatus){error.serverToolFailure=serverToolFailure(error,error.httpStatus,error.message);error.authFailure=[401,403].includes(error.httpStatus)&&!error.serverToolFailure}
+    throw error;
+  }finally{
+    signal.removeEventListener("abort",cancel);
+    if(chat?.pendingRound?.id===id){delete chat.pendingRound;await persistChats()}
+    if(completed)void request({delivery:{id,action:"release"}},{signal:AbortSignal.timeout(5000)}).catch(()=>{});
+  }
+}
+async function consumeChatStream(res,body,onUpdate){
   if(!res.body)throw new Error("Streaming response body is unavailable.");
 
   const reader=res.body.getReader(),dec=new TextDecoder();let buf="";
@@ -1827,9 +1848,9 @@ async function performStreamRequest(body,onUpdate){
       let timer;
       const idleRemaining=90000-(Date.now()-lastDataAt),totalRemaining=180000-(Date.now()-streamStartedAt);
       const timeoutError=()=>new Error(totalRemaining<=idleRemaining?"1回の生成が3分を超えたため停止しました。途中結果を保存しています。必要な確認事項を絞るかモデルを変更してください。":"生成ストリームの応答が90秒間ありません。途中結果を保存しました。続きから再開してください。");
-      if(Math.min(idleRemaining,totalRemaining)<=0)throw timeoutError();
-      const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(timeoutError()),Math.min(idleRemaining,totalRemaining))});
-      let chunk;try{chunk=await Promise.race([reader.read(),timeout])}finally{clearTimeout(timer)}
+      if(!res.resumable&&Math.min(idleRemaining,totalRemaining)<=0)throw timeoutError();
+      const timeout=res.resumable?null:new Promise((_,reject)=>{timer=setTimeout(()=>reject(timeoutError()),Math.min(idleRemaining,totalRemaining))});
+      let chunk;try{chunk=await (res.resumable?reader.read():Promise.race([reader.read(),timeout]))}finally{clearTimeout(timer)}
       if(chunk.done){ended=true;buf+=dec.decode();if(buf.trim())consume(buf);break}
       buf+=dec.decode(chunk.value,{stream:true});
       const lines=buf.split("\n");buf=lines.pop()||"";
@@ -1910,6 +1931,7 @@ async function retryWithClientWebTools(baseBody,onUpdate,onEvent,reason="server-
 async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClientWeb=false,forceTool=null,finalize=false}={}){
   const key=getApiKey();
   if(!key)throw new Error("アクセスパスワードが未入力です。設定から入力してください。");
+  if(activeChat()?.recoveringRound)return performStreamRequest(activeChat().recoveringRound.body,onUpdate);
 
   const selected=selectedModel();
   const providerLabel=selected.providerLabel||selected.provider;
@@ -1991,19 +2013,28 @@ async function streamRound(messages,forcedPlan=false,onUpdate,onEvent,{forceClie
   if(hasServerSearch&&incompleteServerSearchResponse(result))return await retryWithClientWebTools(baseBody,onUpdate,onEvent,"incomplete",result.msg?.tool_calls||[]);
   return result;
 }
-async function sendMessage(){
+async function sendMessage({recover=false}={}){
   if(running)return;
   if(!chatHistoryReady){toast("会話履歴を復元しています。少し待ってから送信してください。");return}
-  const text=els.prompt.value.trim();if(!text&&!pendingImages.length)return;
-  const selected=selectedModel();
-  if(pendingImages.length&&!selected.vision){
+  const savedRound=recover?activeChat()?.pendingRound:null;
+  if(recover&&!savedRound)return;
+  const text=recover?"":els.prompt.value.trim();if(!recover&&!text&&!pendingImages.length)return;
+  const selected=recover?(modelCatalog.find(m=>m.provider===savedRound.body.provider&&m.id===savedRound.body.model)||selectedModel()):selectedModel();
+  if(!recover&&pendingImages.length&&!selected.vision){
     toast("画像入力には画像対応モデルを選択してください");openSettings();return;
   }
   if(!getApiKey()){openSettings();setKeyStatus("アクセスパスワード状態: 未入力","bad");toast("設定画面からアクセスパスワードを入力してください");return}
   const images=pendingImages.map(image=>({...image}));
-  const editIndex=editingMessageIndex;
+  const editIndex=recover?null:editingMessageIndex;
   let c=activeChat();
-  if(editIndex!==null){
+  if(recover){
+    // Reattach an existing request; do not insert a synthetic user message or resend the model request.
+    c.recoveringUi=c.messages.find(m=>m.turnId===savedRound.turnId);
+    c.messages=c.messages.filter(m=>m.turnId!==savedRound.turnId&&!m.internal);
+    c.messages.push(...(savedRound.internalMessages||[]));
+    c.recoveringRound=savedRound;
+    settings.provider=selected.provider;settings.model=selected.id;syncChips();
+  }else if(editIndex!==null){
     const original=c?.messages?.[editIndex];
     if(!original||original.role!=="user"||original.internal){toast("編集対象のメッセージが見つかりません");cancelMessageEdit({restoreDraft:false});return}
     const hasLaterConversation=c.messages.slice(editIndex+1).some(message=>!message.internal&&["user","assistant"].includes(message.role));
@@ -2018,20 +2049,20 @@ async function sendMessage(){
     c=c||createChat();autoTitle(text||"画像チャット");
     c.messages.push({role:"user",content:text,images,at:nowISO()});
   }
-  c.updatedAt=nowISO();els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt();persistChats();renderThread({forceBottom:true});renderChatList();renderPlan();
+  c.updatedAt=nowISO();if(!recover){els.prompt.value="";pendingImages=[];renderPendingImages();resizePrompt()}persistChats();renderThread({forceBottom:!recover});renderChatList();renderPlan();
   const start=Date.now(),heavy=Boolean(text)&&isHeavyTask(text);running=true;abortController=new AbortController();syncQuickControls();setStatus(heavy?"計画を準備中":"生成中","busy");
   c.resumeState=beginResumeState(c);persistChats();
-  const uiMsg={role:"assistant",content:"",timeline:[],_streaming:true,toolEvents:[],activity:[],at:nowISO()};upsertActivity(uiMsg,"model-round-1",selected.name,"running",heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:true});
+  const uiMsg={role:"assistant",timeline:[],toolEvents:[],activity:[],at:nowISO(),...(c.recoveringUi||{}),content:"",reasoning:"",error:undefined,_streaming:true};delete c.recoveringUi;upsertActivity(uiMsg,`model-round-${recover?savedRound.round||1:1}`,selected.name,"running",recover?"保存された生成へ再接続中":heavy?"計画とToolを選択中":"推論・Tool選択中");const node=renderMessage(uiMsg);els.thread.appendChild(node);scrollBottom({force:!recover});
   c.liveTurn=uiMsg;let lastStreamSave=0;persistChats();
-  let rounds=0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
+  let rounds=recover?Math.max(0,(savedRound.round||1)-1):0,totalCost=0,totalOut=0,forcedPlan=heavy&&selected.supportsTools&&!c.plan?.status?.includes?.("running");
   const cacheUsage={prompt_tokens:0,cached_tokens:0,cache_write_tokens:0,reported_rounds:0,total_rounds:0};
   let webRecoveryGuidance="",webRecoveryAttempts=0,forceNextWebSearch=false,useClientWebFallback=false,emptyContinuations=0;
   const failureTracker=createToolFailureTracker(c.resumeState.operations),investigation=createInvestigationTracker(c.resumeState.investigation);let toolCallsUsed=0,finalizeInvestigation=false;
   try{
-    while(rounds<Number(settings.maxRounds)){
-      rounds++;setStatus(rounds===1&&forcedPlan?"計画を作成中":`実行中 · round ${rounds}`,"busy");
+    while(rounds<Math.max(Number(settings.maxRounds),recover?savedRound.round||1:0)){
+      rounds++;c.runRound=rounds;setStatus(rounds===1&&forcedPlan?"計画を作成中":`実行中 · round ${rounds}`,"busy");
       const retryWebSearch=forceNextWebSearch;
-      const msgs=apiMessages(c,webRecoveryGuidance);
+      const msgs=c.recoveringRound?.body.messages||apiMessages(c,webRecoveryGuidance);
       webRecoveryGuidance="";forceNextWebSearch=false;
       upsertActivity(uiMsg,`model-round-${rounds}`,selected.name,"running",rounds===1&&forcedPlan?"計画作成を要求中":`round ${rounds} · 推論 / Tool選択`);
       renderStreamingAssistant(node,uiMsg);
@@ -2169,6 +2200,7 @@ async function sendMessage(){
     final.workNotes=structuredCloneSafe(c.resumeState.notes);delete c.liveTurn;
     c.messages.push(final);c.updatedAt=nowISO();c.messages=c.messages.filter(m=>!m.internal);finishTurnView(node,uiMsg,final,c);persistChats();renderChatList();
   }finally{
+    delete c.runRound;delete c.recoveringRound;
     await persistChats();
     running=false;abortController=null;renderEditMode();syncQuickControls();
   }
@@ -2198,7 +2230,7 @@ function saveSettings(){
   const key=normalizeApiKey(els.apiKey.value),save=els.saveKey.checked;
   settings={...settings,provider:els.providerSelect.value,model:els.modelSelect.value,saveKey:save,planner:els.planner.value,maxTokens:Number(els.maxTokens.value),temperature:clamp(Number(els.temperature.value||0.4),0,2),maxRounds:clamp(Number(els.maxRounds.value||16),1,30),
     reasoning:els.reasoning.checked,web:els.web.checked,webEngine:els.webEngine.value,webResults:Number(els.webResults.value),webMaxCalls:clamp(Number(els.webMaxCalls.value||4),1,20),fileHistory:clamp(Number(els.fileHistory.value||20),1,50),systemPrompt:els.systemPrompt.value,dark:els.dark.checked};
-  setApiKey(key,save);persistSettings();applyTheme();syncChips();els.settings.close();toast("設定を保存しました")
+  setApiKey(key,save);persistSettings();applyTheme();syncChips();els.settings.close();toast("設定を保存しました");void recoverPendingGeneration()
 }
 
 function setAuthDiag(lines,state=""){
@@ -2336,11 +2368,20 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&els.content.classList.contains("withPlay")&&window.innerWidth<760)togglePlay(false);
 });
 window.addEventListener("beforeunload",e=>{if(running){e.preventDefault();e.returnValue=""}});
+async function recoverPendingGeneration(){
+  if(running||!chatHistoryReady||!getApiKey())return;
+  const chat=chats.find(c=>c.pendingRound);
+  if(!chat)return;
+  activeChatId=chat.id;await sendMessage({recover:true});
+}
+for(const event of ["online","pageshow","focus"])window.addEventListener(event,()=>{void recoverPendingGeneration()});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void recoverPendingGeneration()});
 
 async function init(){
   applyTheme();syncChips();await loadModelCatalog();await openDB();await restoreChats();await renderFiles();renderToolLog();
   if(!chats.length)createChat();else{renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan()}
   if(!getApiKey())setTimeout(()=>{if(!getApiKey())openSettings()},250);
+  else void recoverPendingGeneration();
 }
 init().catch(e=>{console.error(e);toast("初期化エラー: "+e.message);setStatus("初期化エラー","err")});
 </script>

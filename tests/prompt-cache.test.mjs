@@ -83,7 +83,8 @@ test("web fallback retries append instructions without rewriting prior messages"
 });
 test("non-streaming title response stays valid JSON instead of receiving an SSE prefix",async()=>{
   let handler,headers={},sent,writes=0;
-  runInNewContext(server.slice(server.indexOf('app.post("/api/chat"'),server.indexOf("function providerCheckEndpoint(")),{
+  runInNewContext(server.slice(server.indexOf('async function handleChat('),server.indexOf("function providerCheckEndpoint(")),{
+    createDetachedChat:({handleChat})=>handleChat,
     app:{post:(_path,fn)=>handler=fn},authorizeRequest:()=>({ok:true}),requestedModel:()=>({provider:"groq",id:"test"}),
     providerAccess:()=>({ok:true,provider:{label:"Groq"},apiKey:"mock"}),removeAccessPassword:body=>body,adaptProviderBody:(_provider,body)=>body,
     providerFetch:async()=>Response.json({choices:[{message:{content:"自動タイトル"}}]}),
@@ -98,7 +99,8 @@ test("proxy emits a safe SSE error when the upstream stream breaks after headers
     controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning":"partial"}}]}\n\n'));
     setTimeout(()=>controller.error(new Error("private upstream trace")),5);
   }});
-  runInNewContext(server.slice(server.indexOf('app.post("/api/chat"'),server.indexOf("function providerCheckEndpoint(")),{
+  runInNewContext(server.slice(server.indexOf('async function handleChat('),server.indexOf("function providerCheckEndpoint(")),{
+    createDetachedChat:({handleChat})=>handleChat,
     app:{post:(_path,fn)=>handler=fn},authorizeRequest:()=>({ok:true}),requestedModel:()=>({provider:"groq",id:"test"}),
     providerAccess:()=>({ok:true,provider:{label:"Groq"},apiKey:"mock"}),removeAccessPassword:body=>body,adaptProviderBody:(_provider,body)=>body,
     providerFetch:async()=>new Response(upstream,{headers:{"Content-Type":"text/event-stream"}}),

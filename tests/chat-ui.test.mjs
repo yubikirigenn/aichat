@@ -311,7 +311,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     const interrupted=await page.evaluate(async()=>{
       const saved=fetchChatResponse;
       fetchChatResponse=async()=>new Response('data: {"choices":[{"delta":{"reasoning":"partial thoughts"}}]}\n\n');
-      streamRound=async(messages,forced,onUpdate)=>performStreamRequest({},onUpdate);
+      streamRound=async(messages,forced,onUpdate)=>consumeChatStream(await fetchChatResponse({}),{},onUpdate);
       els.prompt.value="ストリーム切断の検証";await sendMessage();fetchChatResponse=saved;
       return {error:activeChat().messages.at(-1).error,reasoning:activeChat().messages.at(-1).reasoning,state:activeChat().resumeState.status};
     });
