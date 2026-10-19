@@ -21,7 +21,7 @@ Render からそのまま公開できる、画像入力とワークスペース�
 ## 主な機能
 
 - Token Harbor / Gemini / Groq / OpenRouter のプロバイダ選択（XPLは送信停止中）
-- 2026-10-09時点で確認した無料プラン・無料オファー・無料モデルの登録
+- 2026-10-20時点で確認した無料プラン・無料オファー・無料モデルの登録
 - モデル選択を「画像対応」「画像非対応」に分離
 - クリップボード画像の貼り付け、画像ファイル添付、画像プレビュー
 - OpenAI互換のマルチモーダル`messages[].content`による画像送信
@@ -73,11 +73,15 @@ Experiential Labsの `qwen3.8-flash-next-uncensored` は、2026-10-09の公開�
 
 OpenRouterは、Models APIで入力・出力料金がともに$0のチャットモデルを登録し、画像入力の有無をモデルごとに反映しています（音楽生成は除外）。無料提供に期限があるモデルは選択欄にも期限を表示します。Groqは公式Free Plan Limitsに掲載されたチャット対応モデルを登録しています。
 
+2026-10-20 JSTの再確認でOpenRouterは18件です。`minimax/minimax-m3.1-flash:free`（画像対応）、`xingchen-agi/xing4.0-29b-a4b:free`（テキスト）、`nvidia/nemotron-3.5-super-vl:free`（画像対応）を追加し、現在の料金ゼロ一覧にない `apodex/apodex-1.1-mini:free` と `inclusionai/ling-3.1-flash` は削除しました。有料の同名・後継IDには置換しません。登録一覧は確認時点のスナップショットであり、将来の料金・提供継続を保証しません。
+
+Geminiは無料のチャット用IDを9件維持しています。`gemini-3.7-flash` は3.8 Flash、`gemini-3.5-flash` は3.6 Flashへの互換IDとして注記しました。2.5系は過去の利用実績がある既存利用者向けで、新規プロジェクトの利用可否は保証できません。[公式の移行・利用制限](https://ai.google.dev/gemini-api/docs/deprecations)に従い、新規には3.8 Flash／3.5 Flash-Liteを推奨します。Gemini 4 Argonは無料枠がないため登録しません。Groqのチャット4件は[Free Plan Limits](https://console.groq.com/docs/rate-limits)と再照合済みです。XPLの送信停止は解除していません。
+
 参照元: [Experiential Labs公開モデルカタログ](https://platform.experientiallabs.ai/models) / [Experiential Labs API仕様](https://platform.experientiallabs.ai/llms.txt) / [OpenRouter Models API](https://openrouter.ai/docs/api/api-reference/models/get-models) / [OpenRouter無料モデル一覧](https://openrouter.ai/collections/free-models)
 
 ## Render への設定
 
-Token Harborは2026-10-10 JSTに[公式Free一覧](https://www.tokenharbor.ai/models?category=free)で確認した `claude-haiku-5.5:free`（期間限定）、`deepseek-v4.1-flash:free`、`mimo-v2.6-flash:free` の3ルートのみ登録しています。すべて画像入力あり。音声・動画・ファイル入力はこのアプリでは未対応です。[OpenAI互換API](https://www.tokenharbor.ai/docs/api/curl)へサーバーから接続します。Thinkingは「非対応」ではなくモデルの自動設定として扱い、返された内容を表示します。ゲートウェイでの明示ON/OFFは未確認のため、未確認パラメーターは送りません（画面の設定で強制ON/OFFできる保証はありません）。DeepSeek・MiMoのTool継続時は返された推論を `reasoning_content` として保持します。Function Toolの実利用はアカウント・ルートの対応に依存します。
+Token Harborは2026-10-20 JSTに[公式モデルページ](https://tokenharbor.ai/models)の公開 `freeRows` で確認した `deepseek-v4.1-flash:free`、`mimo-v2.6-flash:free` の2ルートのみ登録しています。無料一覧から外れた `claude-haiku-5.5:free` は削除し、有料のbase IDには切り替えません。すべて画像入力あり。音声・動画・ファイル入力はこのアプリでは未対応です。[OpenAI互換API](https://www.tokenharbor.ai/docs/api/curl)へサーバーから接続します。Thinkingは「非対応」ではなくモデルの自動設定として扱い、返された内容を表示します。ゲートウェイでの明示ON/OFFは未確認のため、未確認パラメーターは送りません（画面の設定で強制ON/OFFできる保証はありません）。DeepSeek・MiMoのTool継続時は返された推論を `reasoning_content` として保持します。Function Toolの実利用はアカウント・ルートの対応に依存します。
 
 GroqのThinkingは[公式仕様](https://console.groq.com/docs/reasoning)に合わせてモデル別に指定します。GPT-OSSは `reasoning_effort` と `include_reasoning`、Qwenは `reasoning_effort` と `reasoning_format` を使用し、非対応モデルには送りません。GPT-OSSのOFFは推論の完全停止ではなく、低いeffortと推論表示の非表示です。これらのリクエスト形式はモックで検証し、実モデルの生成品質は未検証です。
 

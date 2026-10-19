@@ -51,7 +51,7 @@ test("Token Harbor requires free access opt-in and rejects paid base IDs",()=>{
   assert.equal(access("tokenharbor").reason,"tokenharbor_free_unconfirmed");
   env.TOKENHARBOR_FREE_ACCESS_CONFIRMED="true";assert.equal(access("tokenharbor").ok,true);
   delete env.TOKENHARBOR_API_KEY;assert.equal(access("tokenharbor").reason,"provider_configuration");
-  const models=MODEL_CATALOG.filter(m=>m.provider==="tokenharbor");assert.equal(models.length,3);
+  const models=MODEL_CATALOG.filter(m=>m.provider==="tokenharbor");assert.equal(models.length,2);
   for(const model of models){
     assert.ok(model.id.endsWith(":free")&&model.vision);
     assert.equal(MODEL_CATALOG.find(m=>m.provider==="tokenharbor"&&m.id===model.id.replace(/:free$/,"")),undefined);

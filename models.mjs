@@ -1,4 +1,4 @@
-// Curated snapshot checked on 2026-10-09 (JST).
+// Curated snapshot checked on 2026-10-20 (JST).
 // Free-tier models still require an eligible account. XPL is retained only as a
 // suspended selection; its promotional badge is not proof of zero billing.
 // Availability and rate limits can change; the server still validates every
@@ -87,7 +87,9 @@ const EXPERIENTIAL_MODEL_CATALOG = EXPERIENTIAL_SUSPENDED_MODELS.map(
 );
 
 const OPENROUTER_FREE_MODELS = Object.freeze([
-  ["apodex/apodex-1.1-mini:free", "Apodex 1.1 Mini", {}],
+  ["minimax/minimax-m3.1-flash:free", "MiniMax M3.1 Flash", { vision: true }],
+  ["xingchen-agi/xing4.0-29b-a4b:free", "Xing4.0 29B A4B", {}],
+  ["nvidia/nemotron-3.5-super-vl:free", "NVIDIA Nemotron 3.5 Super VL", { vision: true }],
   ["cohere/north-mini-code:free", "Cohere North Mini Code", {}],
   ["dots-studio/dots-3-note-preview:free", "Dots3 Note Preview", {
     vision: true,
@@ -96,7 +98,6 @@ const OPENROUTER_FREE_MODELS = Object.freeze([
   }],
   ["google/gemma-4-26b-a4b-it:free", "Gemma 4 26B A4B", { vision: true }],
   ["google/gemma-4-31b-it:free", "Gemma 4 31B", { vision: true }],
-  ["inclusionai/ling-3.1-flash", "Ling 3.1 Flash", {}],
   ["liquid/lfm-2.5-2.6b:free", "LFM2.5 2.6B", {}],
   ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "NVIDIA Nemotron 3 Nano Omni", { vision: true }],
   ["nvidia/nemotron-3-super-120b-a12b:free", "NVIDIA Nemotron 3 Super", {}],
@@ -124,9 +125,8 @@ const OPENROUTER_MODEL_CATALOG = OPENROUTER_FREE_MODELS.map(
 );
 
 export const MODEL_CATALOG = Object.freeze([
-  // Official Free picker checked 2026-10-10 JST. Never substitute paid base IDs.
+  // Official page's freeRows checked 2026-10-20 JST. Never substitute paid base IDs.
   ...[
-    ["claude-haiku-5.5:free", "Claude Haiku 5.5", "期間限定の無料ルート。終了・上限時はエラーのまま停止します。"],
     ["deepseek-v4.1-flash:free", "DeepSeek V4.1 Flash", "無料枠の対象ルートです。"],
     ["mimo-v2.6-flash:free", "MiMo V2.6 Flash", "無料枠の対象ルートです。"],
   ].map(([id, name, note]) => model("tokenharbor", id, name, {
@@ -135,7 +135,10 @@ export const MODEL_CATALOG = Object.freeze([
   })),
   ...["3.8-flash", "3.7-flash", "3.6-flash", "3.5-flash", "3.5-flash-lite", "3.1-flash-lite", "2.5-pro", "2.5-flash", "2.5-flash-lite"].map(version =>
     model("gemini", `gemini-${version}`, `Gemini ${version.replace(/-/g, " ")}`, {
-      vision: true, note: "Google AI StudioでFree Tierのプロジェクトのキーを使用。有料プロジェクトのキーでは課金されます。無料枠の入力は製品改善に利用される場合があります。",
+      vision: true, note: "Google AI StudioでFree Tierのプロジェクトのキーを使用。有料プロジェクトのキーでは課金されます。無料枠の入力は製品改善に利用される場合があります。"
+        +(version==="3.7-flash"?" 互換ID。Google側でGemini 3.8 Flashへ自動転送されます。":"")
+        +(version==="3.5-flash"?" 互換ID。Google側でGemini 3.6 Flashへ自動転送されます。":"")
+        +(version.startsWith("2.5-")?" 旧モデルを過去に利用した既存利用者向け。新規プロジェクトではGemini 3.8 Flashまたは3.5 Flash-Liteを使用してください。":""),
     })),
   // Groq Free Plan Limits: chat-capable models from the current catalog.
   model("groq", "openai/gpt-oss-120b", "GPT OSS 120B"),
@@ -146,7 +149,7 @@ export const MODEL_CATALOG = Object.freeze([
   // Suspended Experiential Labs selection (not an assertion of free billing).
   ...EXPERIENTIAL_MODEL_CATALOG,
 
-  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-09.
+  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-20.
   ...OPENROUTER_MODEL_CATALOG,
 ]);
 
