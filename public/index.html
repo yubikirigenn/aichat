@@ -420,8 +420,10 @@ const LS_SETTINGS = "nemotron_workspace_settings_v1";
 const LS_CHATS = "nemotron_workspace_chats_v1";
 const SS_KEY = "nemotron_workspace_access_password";
 const DB_NAME = "NemotronWorkspaceDB";
-const DB_VERSION = 3;
-const FILE_STORE = "files";
+const DB_VERSION = 4;
+const FILE_STORE = "session_files";
+const LEGACY_FILE_STORE = "files";
+const WORKSPACE_META_STORE = "workspace_meta";
 const RESULT_STORE = "tool_results";
 const CHAT_STORE = "chat_history";
 const FALLBACK_MODELS = [
@@ -819,21 +821,28 @@ function deleteMessage(index){
 
 function createChat(){
   if(running){toast("生成を停止してから新しいチャットを作成してください");return activeChat()}
+  rememberWorkspaceView();
   const c={id:uid(),title:"新しいチャット",createdAt:nowISO(),updatedAt:nowISO(),messages:[],plan:null};
-  chats.unshift(c);activeChatId=c.id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();return c;
+  chats.unshift(c);activeChatId=c.id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();void switchWorkspace();return c;
 }
-function deleteChat(id){
+async function deleteChat(id){
   if(running&&id===activeChatId){toast("生成を停止してからチャットを削除してください");return}
   if(editingMessageIndex!==null&&id===activeChatId){toast("編集中のメッセージを保存するかキャンセルしてください");return}
+  const files=await listFiles(id);
+  if(files.length&&!confirm(`このチャットとPlaygroundの${files.length}ファイルを削除しますか？`))return;
+  if(running&&id===activeChatId)return;
+  if(id===activeChatId)rememberWorkspaceView();
+  await deleteWorkspaceFiles(id);
   chats=chats.filter(c=>c.id!==id);
   deleteStoredChatResults(id).catch(error=>console.warn("取得結果の削除に失敗しました",error.name));
   if(activeChatId===id) activeChatId=chats[0]?.id||null;
-  if(!activeChatId) createChat(); else {persistChats();renderChatList();renderThread({forceBottom:true});updateTitle()}
+  if(!activeChatId) createChat(); else {persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();void switchWorkspace()}
 }
 function selectChat(id){
   if(running){toast("生成中はチャットを切り替えられません");return}
   if(editingMessageIndex!==null&&id!==activeChatId){toast("編集中のメッセージを保存するかキャンセルしてください");return}
-  activeChatId=id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan();$("#sidebar")?.classList.remove("mobileOpen");
+  if(!chats.some(c=>c.id===id))return;
+  rememberWorkspaceView();activeChatId=id;persistChats();renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan();void switchWorkspace();$("#sidebar")?.classList.remove("mobileOpen");
 }
 function updateTitle(){
   const c=activeChat();els.chatTitle.textContent=c?.title||"新しいチャット";
@@ -1228,7 +1237,7 @@ function renderStreamingAssistant(target,msg){
 async function openDB(){
   db=await new Promise((resolve,reject)=>{
     const req=indexedDB.open(DB_NAME,DB_VERSION);
-    req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(FILE_STORE))d.createObjectStore(FILE_STORE,{keyPath:"path"});if(!d.objectStoreNames.contains(RESULT_STORE))d.createObjectStore(RESULT_STORE,{keyPath:"id"});if(!d.objectStoreNames.contains(CHAT_STORE))d.createObjectStore(CHAT_STORE,{keyPath:"id"})};
+    req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(LEGACY_FILE_STORE))d.createObjectStore(LEGACY_FILE_STORE,{keyPath:"path"});if(!d.objectStoreNames.contains(FILE_STORE))d.createObjectStore(FILE_STORE,{keyPath:["chatId","path"]}).createIndex("chatId","chatId");if(!d.objectStoreNames.contains(WORKSPACE_META_STORE))d.createObjectStore(WORKSPACE_META_STORE,{keyPath:"id"});if(!d.objectStoreNames.contains(RESULT_STORE))d.createObjectStore(RESULT_STORE,{keyPath:"id"});if(!d.objectStoreNames.contains(CHAT_STORE))d.createObjectStore(CHAT_STORE,{keyPath:"id"})};
     req.onblocked=()=>reject(new Error("他のタブを閉じて再読み込みしてください（保存領域の更新待ち）。"));
     req.onsuccess=()=>{req.result.onversionchange=()=>req.result.close();resolve(req.result)};
     req.onerror=()=>reject(req.error);
@@ -1236,25 +1245,48 @@ async function openDB(){
 }
 function tx(store,mode="readonly"){return db.transaction(store,mode).objectStore(store)}
 function dbReq(req){return new Promise((res,rej)=>{req.onsuccess=()=>res(req.result);req.onerror=()=>rej(req.error)})}
-async function listFiles(){ return (await dbReq(tx(FILE_STORE).getAll())).sort((a,b)=>a.path.localeCompare(b.path)) }
-async function getFile(path){ return await dbReq(tx(FILE_STORE).get(normalizePath(path))) }
-async function putFile(path,content,{createOnly=false}={}){
-  path=normalizePath(path);const old=await getFile(path);if(createOnly&&old)throw new Error("既に存在します: "+path);
+function workspaceChatId(id=activeChatId){if(!id||!chats.some(c=>c.id===id))throw new Error("Playgroundのチャットが見つかりません");return id}
+async function listFiles(chatId=workspaceChatId()){ return (await dbReq(tx(FILE_STORE).index("chatId").getAll(chatId))).sort((a,b)=>a.path.localeCompare(b.path)) }
+async function getFile(path,chatId=workspaceChatId()){ return await dbReq(tx(FILE_STORE).get([chatId,normalizePath(path)])) }
+async function putFile(path,content,{createOnly=false,chatId=workspaceChatId()}={}){
+  path=normalizePath(path);const old=await getFile(path,chatId);if(createOnly&&old)throw new Error("既に存在します: "+path);
   const history=old?.history||[];if(old&&old.content!==content)history.push({at:nowISO(),content:old.content});
   while(history.length>clamp(Number(settings.fileHistory||20),1,50))history.shift();
-  const rec={path,content:String(content),updatedAt:nowISO(),createdAt:old?.createdAt||nowISO(),history};
-  await dbReq(tx(FILE_STORE,"readwrite").put(rec));return rec;
+  const rec={chatId,path,content:String(content),updatedAt:nowISO(),createdAt:old?.createdAt||nowISO(),history};
+  workspaceChatId(chatId);await workspaceWrite(store=>store[createOnly?"add":"put"](rec));return rec;
 }
-async function removeFile(path){ path=normalizePath(path);await dbReq(tx(FILE_STORE,"readwrite").delete(path)) }
+function workspaceWrite(write){return new Promise((resolve,reject)=>{const transaction=db.transaction(FILE_STORE,"readwrite");transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);transaction.onabort=()=>reject(transaction.error||new Error("ファイル保存が中断されました"));write(transaction.objectStore(FILE_STORE))})}
+async function removeFile(path,chatId=workspaceChatId()){path=normalizePath(path);await workspaceWrite(store=>store.delete([chatId,path]))}
+async function deleteWorkspaceFiles(chatId){await workspaceWrite(store=>{const req=store.index("chatId").openCursor(IDBKeyRange.only(chatId));req.onsuccess=()=>{const cursor=req.result;if(cursor){cursor.delete();cursor.continue()}}})}
+async function migrateLegacyWorkspace(){
+  if(await dbReq(tx(WORKSPACE_META_STORE).get("legacy_files_v1")))return;
+  const files=await dbReq(tx(LEGACY_FILE_STORE).getAll()),chatId="legacy-playground-v1";
+  if(files.length&&!chats.some(c=>c.id===chatId)){
+    chats.push({id:chatId,title:"以前のPlayground",createdAt:nowISO(),updatedAt:nowISO(),messages:[],plan:null});await persistChats();
+    if(chatSaveError)throw new Error("既存Playgroundの移行先チャットを保存できません。元ファイルは保持しています。");
+  }
+  await new Promise((resolve,reject)=>{const transaction=db.transaction([FILE_STORE,WORKSPACE_META_STORE],"readwrite");transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);transaction.onabort=()=>reject(transaction.error||new Error("Playgroundの移行が中断されました"));const store=transaction.objectStore(FILE_STORE);for(const file of files)store.add({...file,chatId});transaction.objectStore(WORKSPACE_META_STORE).add({id:"legacy_files_v1",chatId,count:files.length})});
+  if(files.length)toast("既存ファイルは「以前のPlayground」に移行しました");
+}
+let workspaceViewChatId=null,workspaceViewEpoch=0;
+function rememberWorkspaceView(){const c=chats.find(c=>c.id===workspaceViewChatId);if(c&&currentFilePath)c.workspaceView={path:currentFilePath,draft:els.codeEditor.value}}
+async function switchWorkspace(){
+  const chatId=activeChatId,epoch=++workspaceViewEpoch;workspaceViewChatId=chatId;clearTimeout(previewTimer);
+  currentFilePath=null;els.codeEditor.value="";els.codeEditor.disabled=true;els.currentPath.textContent="ファイルを選択";updateLineNums();
+  previewRunId="";previewDiagnostics={status:"not_loaded",events:[],missing:[]};els.previewFrame.srcdoc="";els.fileList.innerHTML="";
+  renderPlan();renderToolLog();
+  if(!chatId||!db)return;
+  try{await renderFiles();if(epoch!==workspaceViewEpoch)return;const view=activeChat()?.workspaceView;if(view?.path){await openFile(view.path);if(epoch!==workspaceViewEpoch)return;if(typeof view.draft==="string")els.codeEditor.value=view.draft;rememberWorkspaceView();persistChats();updateLineNums()}if($("#previewPanel").classList.contains("active"))await buildPreview()}catch(error){if(epoch===workspaceViewEpoch)toast("Playgroundを読み込めません: "+error.message)}
+}
 function normalizePath(path){
   path=String(path||"").trim().replace(/\\/g,"/").replace(/^\/+/,"").replace(/\/+/g,"/");
   if(!path||path==="."||path.includes(".."))throw new Error("無効なパスです");
   if(path.length>240)throw new Error("パスが長すぎます");
   return path;
 }
-async function renameFile(from,to){from=normalizePath(from);to=normalizePath(to);const f=await getFile(from);if(!f)throw new Error("元ファイルがありません");if(await getFile(to))throw new Error("移動先が既に存在します");await putFile(to,f.content,{createOnly:true});await removeFile(from)}
+async function renameFile(from,to){const chatId=workspaceChatId();from=normalizePath(from);to=normalizePath(to);const f=await getFile(from,chatId);if(!f)throw new Error("元ファイルがありません");if(await getFile(to,chatId))throw new Error("移動先が既に存在します");await workspaceWrite(store=>{store.add({...f,path:to,updatedAt:nowISO()});store.delete([chatId,from])})}
 async function renderFiles(){
-  const fs=await listFiles();els.fileList.innerHTML="";
+  const chatId=activeChatId,epoch=workspaceViewEpoch;if(!chatId)return;const fs=await listFiles(chatId);if(chatId!==activeChatId||epoch!==workspaceViewEpoch)return;els.fileList.innerHTML="";
   if(!fs.length){els.fileList.innerHTML=`<div class="panelHint" style="padding:6px">まだファイルがありません。</div>`;return}
   for(const f of fs){
     const d=document.createElement("div");d.className="fileItem"+(f.path===currentFilePath?" active":"");
@@ -1262,19 +1294,19 @@ async function renderFiles(){
   }
 }
 async function openFile(path){
-  const f=await getFile(path);if(!f)return;currentFilePath=f.path;els.currentPath.textContent=f.path;els.codeEditor.disabled=false;els.codeEditor.value=f.content;updateLineNums();await renderFiles()
+  const chatId=workspaceChatId(),epoch=workspaceViewEpoch;const f=await getFile(path,chatId);if(!f||chatId!==activeChatId||epoch!==workspaceViewEpoch)return;currentFilePath=f.path;els.currentPath.textContent=f.path;els.codeEditor.disabled=false;els.codeEditor.value=f.content;rememberWorkspaceView();persistChats();updateLineNums();await renderFiles()
 }
 async function saveCurrentFile(){
-  if(!currentFilePath)return;await putFile(currentFilePath,els.codeEditor.value);toast("保存しました: "+currentFilePath);await renderFiles();schedulePreview()
+  if(!currentFilePath)return;const chatId=workspaceChatId(),path=currentFilePath,content=els.codeEditor.value;await putFile(path,content,{chatId});if(chatId!==activeChatId)return;rememberWorkspaceView();persistChats();toast("保存しました: "+path);await renderFiles();schedulePreview()
 }
 async function undoCurrentFile(){
   if(!currentFilePath)return;
-  const f=await getFile(currentFilePath);
+  const chatId=workspaceChatId(),path=currentFilePath;const f=await getFile(path,chatId);
   if(!f?.history?.length){toast("戻せる履歴がありません");return}
   const history=[...f.history],prev=history.pop();
   const rec={...f,content:prev.content,updatedAt:nowISO(),history};
-  await dbReq(tx(FILE_STORE,"readwrite").put(rec));
-  await openFile(currentFilePath);schedulePreview();toast("1つ前の保存状態へ戻しました");
+  await workspaceWrite(store=>store.put(rec));
+  if(chatId!==activeChatId)return;await openFile(path);schedulePreview();toast("1つ前の保存状態へ戻しました");
 }
 function updateLineNums(){
   const n=els.codeEditor.value.split("\n").length;els.lineNums.textContent=Array.from({length:n},(_,i)=>i+1).join("\n");
@@ -1287,11 +1319,13 @@ async function exportWorkspace(){
   const files=await listFiles();downloadBlob("nemotron-workspace-"+new Date().toISOString().slice(0,10)+".json",JSON.stringify({format:"nemotron-workspace-v1",exportedAt:nowISO(),files:files.map(f=>({path:f.path,content:f.content}))},null,2),"application/json")
 }
 async function importWorkspaceJSON(file){
+  const chatId=workspaceChatId();
   const data=JSON.parse(await file.text());if(!Array.isArray(data.files))throw new Error("Workspace JSONではありません");
-  for(const f of data.files){if(typeof f.path==="string"&&typeof f.content==="string")await putFile(f.path,f.content)}
+  for(const f of data.files){if(typeof f.path==="string"&&typeof f.content==="string")await putFile(f.path,f.content,{chatId})}
   await renderFiles();toast(data.files.length+"ファイルを読み込みました")
 }
 async function importTextFiles(fileList,preservePaths=false){
+  const chatId=workspaceChatId();
   const allowed=new Set(["txt","md","html","htm","css","js","mjs","cjs","ts","tsx","jsx","json","py","java","c","cpp","h","hpp","cs","go","rs","php","rb","sh","sql","xml","yaml","yml","toml","ini","csv","svg","vue","svelte"]);
   let n=0,skip=0;
   for(const file of fileList){
@@ -1300,7 +1334,7 @@ async function importTextFiles(fileList,preservePaths=false){
     const text=await file.text();
     const raw=preservePaths?(file.webkitRelativePath||file.name):file.name;
     const path=raw.split("/").slice(preservePaths?1:0).join("/")||file.name;
-    await putFile(path,text);n++;
+    await putFile(path,text,{chatId});n++;
   }
   await renderFiles();toast(n+"ファイルを読み込みました"+(skip?`（${skip}件スキップ）`:""))
 }
@@ -1314,14 +1348,17 @@ window.addEventListener("message",event=>{
   if(data.kind==="ready")previewDiagnostics.status="loaded";
 });
 async function buildPreview(){
+  const chatId=activeChatId,epoch=workspaceViewEpoch,path=currentFilePath;if(!chatId)return;
   // Explicit reload supersedes pending edit refreshes; do not reset the page
   // (and erase the user's click evidence) again a few hundred ms afterwards.
   clearTimeout(previewTimer);
-  let entry=await getFile("index.html");
-  if(!entry && currentFilePath?.toLowerCase().endsWith(".html"))entry=await getFile(currentFilePath);
+  let entry=await getFile("index.html",chatId);
+  if(!entry && path?.toLowerCase().endsWith(".html"))entry=await getFile(path,chatId);
+  if(chatId!==activeChatId||epoch!==workspaceViewEpoch)return;
   if(!entry){previewRunId="";previewDiagnostics={status:"no_entry",events:[],missing:[]};els.previewFrame.srcdoc=`<div style="font:14px system-ui;padding:24px;color:#555">index.html またはHTMLファイルを作成するとPreviewできます。</div>`;return}
   const doc=new DOMParser().parseFromString(entry.content,"text/html");
-  const all=await listFiles(),map=new Map(all.map(f=>[f.path,f.content]));
+  const all=await listFiles(chatId),map=new Map(all.map(f=>[f.path,f.content]));
+  if(chatId!==activeChatId||epoch!==workspaceViewEpoch)return;
   previewRunId=crypto.randomUUID();previewDiagnostics={status:"loading",entry:entry.path,events:[],missing:[]};
   for(const link of doc.querySelectorAll('link[rel~="stylesheet"][href]')){
     const href=link.getAttribute("href"),p=resolveRelative(entry.path,href);
@@ -1535,10 +1572,11 @@ function toolSummary(name,args,result){
   if(name.startsWith("plan_"))return name.replace("plan_","Plan ");
   return name;
 }
-function pushToolLog(ev){toolLog.unshift(ev);toolLog=toolLog.slice(0,100);renderToolLog()}
+function pushToolLog(ev){toolLog.unshift({...ev,chatId:activeChatId});toolLog=toolLog.slice(0,100);renderToolLog()}
 function renderToolLog(){
-  els.toolLog.innerHTML=toolLog.length?"":"<div class='panelHint'>まだTool実行はありません。</div>";
-  for(const ev of toolLog){
+  const entries=toolLog.filter(ev=>ev.chatId===activeChatId);
+  els.toolLog.innerHTML=entries.length?"":"<div class='panelHint'>まだTool実行はありません。</div>";
+  for(const ev of entries){
     const d=document.createElement("div");d.className="logItem";d.innerHTML=`<div class="logName">${ev.ok?"✓":"!"} ${escapeHTML(ev.name)}</div><div class="logTime">${new Date(ev.at).toLocaleTimeString("ja-JP")} · ${ev.ms}ms</div><div class="logBody">${escapeHTML(JSON.stringify(ev.detail,null,2).slice(0,5000))}</div>`;els.toolLog.appendChild(d)
   }
 }
@@ -2357,7 +2395,7 @@ $("#imageBtn").onclick=()=>els.imagePicker.click();els.imagePicker.onchange=asyn
 $("#importFolderBtn").onclick=()=>$("#folderPicker").click();$("#folderPicker").onchange=async()=>{try{await importTextFiles($("#folderPicker").files,true)}catch(e){toast(e.message)}finally{$("#folderPicker").value=""}};
 $("#exportWorkspaceBtn").onclick=exportWorkspace;$("#saveFileBtn").onclick=saveCurrentFile;$("#undoFileBtn").onclick=undoCurrentFile;
 $("#downloadFileBtn").onclick=()=>{if(currentFilePath)downloadBlob(currentFilePath.split("/").pop(),els.codeEditor.value)};
-els.codeEditor.addEventListener("input",()=>{updateLineNums();schedulePreview()});els.codeEditor.addEventListener("scroll",()=>els.lineNums.scrollTop=els.codeEditor.scrollTop);
+els.codeEditor.addEventListener("input",()=>{rememberWorkspaceView();persistChats();updateLineNums();schedulePreview()});els.codeEditor.addEventListener("scroll",()=>els.lineNums.scrollTop=els.codeEditor.scrollTop);
 els.codeEditor.addEventListener("keydown",e=>{
   if(e.key==="Tab"){e.preventDefault();const a=e.target,s=a.selectionStart,n=a.selectionEnd;a.setRangeText("  ",n,n,"end");updateLineNums()}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();saveCurrentFile()}
@@ -2372,14 +2410,16 @@ async function recoverPendingGeneration(){
   if(running||!chatHistoryReady||!getApiKey())return;
   const chat=chats.find(c=>c.pendingRound);
   if(!chat)return;
-  activeChatId=chat.id;await sendMessage({recover:true});
+  rememberWorkspaceView();activeChatId=chat.id;await switchWorkspace();await sendMessage({recover:true});
 }
 for(const event of ["online","pageshow","focus"])window.addEventListener(event,()=>{void recoverPendingGeneration()});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void recoverPendingGeneration()});
 
 async function init(){
-  applyTheme();syncChips();await loadModelCatalog();await openDB();await restoreChats();await renderFiles();renderToolLog();
+  applyTheme();syncChips();await loadModelCatalog();await openDB();await restoreChats();chatHistoryReady=false;await migrateLegacyWorkspace();renderToolLog();
+  if(!activeChatId&&chats.length)activeChatId=chats[0].id;
   if(!chats.length)createChat();else{renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan()}
+  await switchWorkspace();chatHistoryReady=true;await persistChats();
   if(!getApiKey())setTimeout(()=>{if(!getApiKey())openSettings()},250);
   else void recoverPendingGeneration();
 }

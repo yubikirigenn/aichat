@@ -74,8 +74,9 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     const favicon=await page.request.get("http://127.0.0.1:31302/favicon.svg");
     assert.equal(favicon.status(),200);assert.match(favicon.headers()["content-type"],/image\/svg\+xml/);
     assert.match(await favicon.text(),/viewBox="0 0 64 64"/);
-    await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
-    assert.equal(await page.evaluate(async()=>(await getFile("kept.txt")).content),"preserved");
+    await page.waitForFunction(()=>db?.version===4&&chatHistoryReady);
+    assert.equal(await page.evaluate(async()=>(await getFile("kept.txt","legacy-playground-v1")).content),"preserved");
+    assert.equal(await page.evaluate(async()=>Boolean(await getFile("kept.txt"))),false);
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     const previousModel=await page.locator("#quickModel").inputValue();
     await page.locator("#quickModel").selectOption("tokenharbor:deepseek-v4.1-flash:free");
@@ -189,9 +190,10 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     const downloadPromise=page.waitForEvent("download");
     await page.locator("[data-result-download]").first().evaluate(button=>button.click());
     assert.ok((await downloadPromise).suggestedFilename().startsWith("result-"));
-    await page.reload();await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
+    await page.reload();await page.waitForFunction(()=>db?.version===4&&chatHistoryReady);
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     assert.equal(await page.evaluate(async ref=>(await getStoredObservation(ref,activeChat().id)).text.includes("NEEDLE"),generation.first_ref),true);
+    await page.evaluate(()=>putFile("kept.txt","preserved"));
     page.once("dialog",dialog=>dialog.dismiss());
     const denied=await page.evaluate(async()=>{
       const result=await executeTool({function:{name:"workspace_delete_file",arguments:JSON.stringify({path:"kept.txt"})}});
@@ -253,7 +255,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     });
     assert.equal(await page.evaluate(()=>activeChat().resumeState.status),"interrupted");
     assert.equal(await page.evaluate(()=>activeChat().resumeState.operations.some(op=>op.name==="workspace_write_file"&&op.status==="completed")),true);
-    await page.reload();await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
+    await page.reload();await page.waitForFunction(()=>db?.version===4&&chatHistoryReady);
     const resumed=await page.evaluate(async()=>{
       document.querySelector("#settingsDialog").close();setApiKey("test-password",false);
       let context="";
@@ -290,7 +292,7 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       return activeChat().resumeState.notes;
     });
     assert.deepEqual(savedNotes.findings,["script loading confirmed"]);
-    await page.reload();await page.waitForFunction(()=>db?.version===3&&chatHistoryReady);
+    await page.reload();await page.waitForFunction(()=>db?.version===4&&chatHistoryReady);
     assert.equal(await page.evaluate(()=>resumeContext(activeChat()).includes("inspect runtime")),true);
     await page.evaluate(()=>{document.querySelector("#settingsDialog").close();setApiKey("test-password",false)});
     // A valid reasoning-only completion gets one bounded continuation, never a
