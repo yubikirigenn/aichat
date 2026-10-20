@@ -120,7 +120,7 @@ function renderTurnView(target,msg,{streaming=false,messageIndex=null}={}){
   if(msg.error)footer+=`<div class="errorCard">${escapeHTML(msg.error)}</div>`;
   const citations=(msg.annotations||[]).filter(a=>a?.url_citation?.url);
   if(citations.length)footer+=`<div class="sources">${[...new Map(citations.map(a=>[a.url_citation.url,a.url_citation])).values()].map(c=>`<a class="sourceChip" href="${escapeHTML(safeResultUrl(c.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(c.title||c.url)}</a>`).join("")}</div>`;
-  if(!streaming&&msg.meta)footer+=`<div class="meta"><details><summary>使用量・実行情報</summary>${Number(msg.meta.tokens||0).toLocaleString()} tokens · ${Number(msg.meta.rounds||0)} rounds · ${(Number(msg.meta.ms||0)/1000).toFixed(1)}s · $${Number(msg.meta.cost||0).toFixed(6)}${cacheUsageLabel(msg.meta.cache)}</details></div>`;
+  if(!streaming&&msg.meta)footer+=`<div class="meta"><details><summary>使用量・実行情報</summary>${Number(msg.meta.tokens||0).toLocaleString()} tokens · ${Number(msg.meta.rounds||0)} rounds · ${(Number(msg.meta.ms||0)/1000).toFixed(1)}s · $${Number(msg.meta.cost||0).toFixed(6)}${cacheUsageLabel(msg.meta.cache)}${msg.meta.auxiliary?.requests?` · 補助AI: ${Number(msg.meta.auxiliary.requests)}回 / ${Number(msg.meta.auxiliary.tokens||0).toLocaleString()} tokens / ${msg.meta.auxiliary.reported===msg.meta.auxiliary.requests?"$"+Number(msg.meta.auxiliary.cost||0).toFixed(6):"費用未報告あり"}`:""}</details></div>`;
   if(Number.isInteger(messageIndex))footer+=`<div class="messageActions"><button type="button" class="messageAction" data-copy-response>コピー</button><button type="button" class="messageAction" data-message-action="delete">削除</button></div>`;
   updateTurnHTML(view.footer,footer);
   if(!streaming&&!view.grouped){

@@ -47,13 +47,13 @@ test("proxy heartbeat comments do not reset the model's idle deadline",async()=>
   await assert.rejects(run({}),/90秒/);
   assert.deepEqual(delays,[90000,60000,30000]);assert.equal(cancelled,true);
 });
-test("ongoing Thinking cannot extend a single stream past the absolute deadline",async()=>{
-  let clock=0,cancelled=false;
-  const reader={read:async()=>{clock+=60000;return {value:new TextEncoder().encode(event(choice({reasoning:"more thinking"}))),done:false}},cancel:async()=>{cancelled=true},releaseLock(){}};
+test("ongoing Thinking can continue past the previous absolute deadline",async()=>{
+  let clock=0,cancelled=false,reads=0;
+  const reader={read:async()=>{clock+=60000;reads++;if(reads>9)return {done:true};return {value:new TextEncoder().encode(event(choice(reads<=8?{reasoning:"more thinking"}:{content:"done"},reads<=8?undefined:"stop"))),done:false}},cancel:async()=>{cancelled=true},releaseLock(){}};
   const run=request("",{Date:{now:()=>clock},fetchChatResponse:async()=>({body:{getReader:()=>reader}})});
-  await assert.rejects(run({}),e=>/3分/.test(e.message)&&e.partialMessage.reasoning==="more thinking".repeat(3));assert.equal(cancelled,true);
+  const result=await run({});assert.equal(result.msg.content,"done");assert.equal(result.msg.reasoning,"more thinking".repeat(8));assert.equal(cancelled,false);
 });
-test("stagnation finalization disables tools and limits response generation",async()=>{
+test("supervisor questions disable tools without disabling Thinking or shrinking the output limit",async()=>{
   let captured;
   const roundSource=html.slice(html.indexOf("async function streamRound("),html.indexOf("async function sendMessage("));
   const run=runInNewContext(roundSource+";streamRound",{
@@ -62,5 +62,5 @@ test("stagnation finalization disables tools and limits response generation",asy
     performStreamRequest:async body=>{captured=body;return {msg:{content:"question"}}},
   });
   await run([],false,null,null,{finalize:true,forceTool:"web_search"});
-  assert.equal(captured.tools,undefined);assert.equal(captured.tool_choice,undefined);assert.equal(captured.max_tokens,2048);assert.equal(captured.reasoning.enabled,false);
+  assert.equal(captured.tools,undefined);assert.equal(captured.tool_choice,undefined);assert.equal(captured.max_tokens,16384);assert.equal(captured.reasoning.enabled,true);
 });

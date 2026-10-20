@@ -337,8 +337,10 @@ async function handleChat(req, res) {
     if (!upstream.ok) {
       const text = await upstream.text();
       const details = parseErrorBody(text, upstream.status, access.provider.label);
+      if(upstream.headers.get("retry-after"))res.setHeader("Retry-After",upstream.headers.get("retry-after"));
       return res.status(upstream.status).json({
         error: details,
+        retry_after: upstream.headers.get("retry-after"),
         upstream_status: upstream.status,
         proxy: true,
       });
@@ -385,7 +387,8 @@ async function handleChat(req, res) {
     });
   }
 }
-app.post("/api/chat", createDetachedChat({handleChat,authorize:authorizeRequest}));
+const detachedChat=createDetachedChat({handleChat,authorize:authorizeRequest});
+app.post("/api/chat", detachedChat);
 
 function providerCheckEndpoint(providerId) {
   return providerId === "openrouter" ? "/key" : "/models";
@@ -995,3 +998,6 @@ const httpServer = app.listen(port, () => {
 // Keep the backend connection alive long enough for Render's reverse proxy.
 httpServer.keepAliveTimeout = 120000;
 httpServer.headersTimeout = 125000;
+let shuttingDown=false;
+async function shutdown(){if(shuttingDown)return;shuttingDown=true;httpServer.close();httpServer.closeIdleConnections?.();await detachedChat.close();process.exit(0)}
+process.once("SIGTERM",()=>{void shutdown()});process.once("SIGINT",()=>{void shutdown()});

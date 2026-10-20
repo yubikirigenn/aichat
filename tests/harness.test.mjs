@@ -4,50 +4,9 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const source=readFileSync(new URL("../public/harness.js",import.meta.url),"utf8");
-const h=runInNewContext(source+";({createInvestigationTracker,runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,observationText,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
+const h=runInNewContext(source+";({runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,observationText,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
 const call=(name,id)=>({id,function:{name,arguments:JSON.stringify({id})}});
 const operation=(name,args)=>({function:{name,arguments:JSON.stringify(args)}});
-test("investigation detects renamed result refs and overlapping read ranges without penalizing new source ranges",()=>{
-  const tracker=h.createInvestigationTracker();
-  const file={ok:true,path:"game.js",content:"x".repeat(20000)};
-  tracker.observe(operation("workspace_read_file",{path:"game.js"}),file,{...h.toolResultPreview(file,"result-a")});
-  assert.equal(tracker.finishRound(),"continue");
-  tracker.observe(operation("tool_result_read",{result_ref:"result-a",offset:3000,limit:1000}),{ok:true,offset:3000,next_offset:4000,view:"text"});
-  assert.equal(tracker.finishRound(),"continue"); // genuinely unread source
-  for(let round=0;round<5;round++){
-    const ref="result-new-"+round;
-    tracker.observe(operation("workspace_read_file",{path:"game.js"}),file,h.toolResultPreview(file,ref));
-    tracker.observe(operation("tool_result_read",{result_ref:ref,offset:3100+round,limit:200}),{ok:true,offset:3100+round,next_offset:3300+round,view:"text"});
-    const state=tracker.finishRound();assert.equal(state,round<2?"continue":round<4?"redirect":"finalize");
-  }
-  tracker.observe(operation("tool_result_read",{result_ref:"result-a",offset:4000}),{ok:true,offset:4000,next_offset:5000,view:"text"});
-  assert.equal(tracker.finishRound(),"continue");
-});
-test("preview reload timestamps, plan claims and checkpoints cannot masquerade as progress",()=>{
-  const tracker=h.createInvestigationTracker();
-  for(let i=0;i<6;i++){
-    tracker.observe(operation("workspace_preview",{action:i%2?"reload":"inspect"}),{ok:true,entry:"index.html",status:"loaded",events:[{kind:"ready",at:String(i),message:"DOM loaded"}],missing:[]});
-    tracker.observe(operation("plan_update",{step:1}),{ok:true,status:"done"});
-    tracker.observe(operation("task_checkpoint",{}),{ok:true,saved:true});
-    assert.equal(tracker.finishRound(),i<3?"continue":i<5?"redirect":"finalize");
-  }
-  tracker.observe(operation("workspace_preview",{action:"inspect"}),{ok:true,entry:"index.html",events:[{kind:"click",at:"new-click",message:"BUTTON#startBtn"}],missing:[]});
-  assert.equal(tracker.finishRound(),"continue");
-});
-test("edited content and saved evidence survive continuation; no-op writes do not reset stagnation",()=>{
-  let tracker=h.createInvestigationTracker();
-  const read=operation("workspace_read_file",{path:"app.js"});
-  tracker.observe(read,{path:"app.js",content:"old"});tracker.finishRound();
-  tracker=h.createInvestigationTracker(JSON.parse(JSON.stringify(tracker.snapshot())));
-  for(let i=0;i<3;i++){
-    tracker.observe(read,{path:"app.js",content:"old",updated_at:String(i)});
-    tracker.observe(operation("workspace_edit_file",{path:"app.js"}),{ok:true,changed:false});
-    tracker.finishRound();
-  }
-  assert.equal(tracker.finishRound(),"redirect");
-  tracker.observe(read,{path:"app.js",content:"new"});assert.equal(tracker.finishRound(),"continue");
-  tracker.observe(operation("workspace_edit_file",{}),{ok:true,changed:true});assert.equal(tracker.finishRound(),"continue");
-});
 test("raw source ranges preserve literal newlines and quotes; metadata requires JSON view",()=>{
   const content='function start() {\n  const quote = "value";\n}\n';
   const record={text:JSON.stringify({path:"game.js",content,full_content:content+"tail"})};
@@ -60,15 +19,15 @@ test("raw source ranges preserve literal newlines and quotes; metadata requires 
   assert.throws(()=>h.observationText(record,"bad"));
   assert.throws(()=>h.observationText({text:'{"ok":true}'},"text"));
 });
-test("repeated successful reads are bounded, persisted, and invalidated by file edits only",()=>{
+test("read counts do not block necessary repeat observations",()=>{
   const read=call("tool_result_read","one"),tracker=h.createToolFailureTracker();
-  for(let i=0;i<3;i++){assert.equal(tracker.check(read),null);tracker.observe(read,{ok:true})}
-  assert.equal(tracker.check(read).code,"repeated_read");
+  for(let i=0;i<100;i++){assert.equal(tracker.check(read),null);tracker.observe(read,{ok:true})}
+  assert.equal(tracker.check(read),null);
   assert.equal(tracker.check(call("tool_result_read","other-offset")),null);
-  tracker.observe(call("task_checkpoint","notes"),{ok:true});assert.equal(tracker.check(read).code,"repeated_read");
+  tracker.observe(call("task_checkpoint","notes"),{ok:true});assert.equal(tracker.check(read),null);
   tracker.observe(call("workspace_edit_file","game.js"),{ok:true});assert.equal(tracker.check(read),null);
   const seed=Array.from({length:3},()=>({name:read.function.name,arguments_excerpt:read.function.arguments,read_only:true,status:"completed"}));
-  assert.equal(h.createToolFailureTracker(seed).check(read).code,"repeated_read");
+  assert.equal(h.createToolFailureTracker(seed).check(read),null);
   seed.push({name:"workspace_edit_file",status:"completed"});assert.equal(h.createToolFailureTracker(seed).check(read),null);
 });
 test("read-only tools run in parallel but writes and planner updates are ordered barriers",async()=>{
@@ -83,13 +42,17 @@ test("read-only tools run in parallel but writes and planner updates are ordered
   assert.ok(events.indexOf("start:read")>events.indexOf("end:write"));assert.ok(events.indexOf("start:plan")>events.indexOf("end:read"));
   assert.deepEqual(Array.from(outcomes,o=>o.result.id),["a","b","c","write","read","plan"]);
 });
-test("identical failing calls are serialized and blocked after two executions",async()=>{
+test("repeat failures remain observable to the AI; explicit permission refusals are enforced",async()=>{
   let executions=0;const tracker=h.createToolFailureTracker();
   const outcomes=await h.runToolBatch(Array(4).fill(call("web_fetch","same")),{tracker,execute:async()=>{executions++;return {result:{ok:false,error:"unavailable"}}}});
-  assert.equal(executions,2);assert.equal(outcomes[2].result.code,"repeated_tool_failure");assert.equal(tracker.blockedCount,2);
-  assert.ok(outcomes[3].result.next_action);
+  assert.equal(executions,4);assert.equal(outcomes[2].result.error,"unavailable");
   const denied=h.createToolFailureTracker(),operation=call("workspace_delete_file","file");
   denied.observe(operation,{ok:false,code:"user_denied"});assert.equal(denied.check(operation).code,"tool_permission_denied");
+});
+test("large tool batches are scheduled rather than rejected at 80 calls",async()=>{
+  const calls=Array.from({length:120},(_,i)=>call("workspace_read_file",String(i)));
+  const outcomes=await h.runToolBatch(calls,{execute:async c=>({result:{ok:true,id:c.id}})});
+  assert.equal(outcomes.length,120);assert.equal(outcomes.at(-1).result.id,"119");
 });
 test("cancellation drains active readers without starting a queued write",async()=>{
   const controller=new AbortController();let writes=0,finished=0;

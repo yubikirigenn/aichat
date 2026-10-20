@@ -265,16 +265,17 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     });
     assert.equal(resumed.hasRecord,true);assert.equal(resumed.cleared,true);assert.equal(resumed.content,"created once");
     const stagnation=await page.evaluate(async()=>{
-      settings.maxRounds=16;let rounds=0,redirected=false,finalized=false;
+      settings.supervisorInterval=3;let rounds=0,redirected=false,finalized=false;const originalAux=requestAuxiliaryAI;
+      requestAuxiliaryAI=async()=>JSON.stringify({action:"ask_user",reason:"開始ボタンを押した後の挙動が未観測です",guidance:"開始画面が残るか利用者に確認してください"});
       streamRound=async(messages,forced,onUpdate,onEvent,options)=>{
-        rounds++;redirected||=messages.some(m=>typeof m.content==="string"&&m.content.includes("進展のない調査"));
+        rounds++;redirected||=messages.some(m=>typeof m.content==="string"&&m.content.includes("監視AIの判断"));
         if(options.finalize){finalized=true;return {msg:{role:"assistant",content:"開始ボタンを押した後も開始画面が残りますか？"}}}
         return {msg:{role:"assistant",content:"確認します",tool_calls:[{id:"stale-"+rounds,function:{name:"workspace_preview",arguments:'{"action":"inspect"}'}}]}};
       };
-      els.prompt.value="挙動を調べて";await sendMessage();
+      els.prompt.value="挙動を調べて";await sendMessage();requestAuxiliaryAI=originalAux;
       return {rounds,redirected,finalized,content:activeChat().messages.at(-1).content,state:activeChat().resumeState?.status,status:els.statusText?.textContent};
     });
-    assert.equal(stagnation.rounds,7);assert.equal(stagnation.redirected,true);assert.equal(stagnation.finalized,true);
+    assert.equal(stagnation.rounds,4);assert.equal(stagnation.redirected,true);assert.equal(stagnation.finalized,true);
     assert.match(stagnation.content,/開始画面/);assert.equal(stagnation.state,"interrupted");
     const closure=await page.evaluate(async()=>{
       let requested=false,hasHistory=false;
@@ -326,6 +327,8 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
       await executeTool({function:{name:"workspace_preview",arguments:'{"action":"reload"}'}});
     });
     await page.waitForFunction(()=>previewDiagnostics.status==="loaded");
+    // Preview generation need not open the panel; open it for a real click.
+    await page.evaluate(()=>{togglePlay(true);setPlayTab("preview",false)});
     const frame=page.frameLocator("#previewFrame");
     await frame.locator("#startBtn").click();
     assert.equal(await frame.locator("#status").textContent(),"started");

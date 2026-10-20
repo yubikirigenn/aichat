@@ -17,11 +17,12 @@ async function openReconnectStream(body,{id,recover=false,signal,request,onState
       if(signal.aborted)throw new DOMException("Stopped","AbortError");
       try{
         const timeout=AbortSignal.timeout(20000);
-        const response=await request(starting?{...body,delivery}:{delivery},{signal:AbortSignal.any([signal,timeout])});
+        const payload={...delivery,version:2};
+        const response=await request(starting?{...body,delivery:payload}:{delivery:payload},{signal:AbortSignal.any([signal,timeout])});
         if(!response.ok){
           const text=await response.text();let data;try{data=JSON.parse(text)}catch{data={}}
           if([502,503,504].includes(response.status)&&!data.error?.code)throw new TypeError("Gateway temporarily unavailable");
-          const error=new Error(data.error?.message||`再接続エラー (${response.status})`);error.httpStatus=response.status;error.code=data.error?.code;error.permanent=true;throw error;
+          const error=new Error(data.error?.message||`再接続エラー (${response.status})`);error.httpStatus=response.status;error.code=data.error?.code;error.retryAfter=data.retry_after||response.headers.get("retry-after");error.permanent=true;throw error;
         }
         if(response.headers.get("content-type")?.includes("application/json")){
           const text=await response.text();
@@ -52,14 +53,17 @@ async function openReconnectStream(body,{id,recover=false,signal,request,onState
       while(!done){
         const response=await rpc({id,action:"read",cursor});const data=await response.json();
         if(done)return;
-        if(!Array.isArray(data.chunks)||!Number.isInteger(data.cursor)||data.cursor!==cursor+data.chunks.length)throw new Error("再接続APIの受信位置が不正です。");
+        if(!Array.isArray(data.chunks)||data.chunks.some(chunk=>typeof chunk!=="string")||!Number.isSafeInteger(data.cursor))throw new Error("再接続APIの受信位置が不正です。");
+        const binary=data.encoding==="base64"?data.chunks.map(chunk=>Uint8Array.from(atob(chunk),c=>c.charCodeAt(0))):null;
+        const advance=binary?binary.reduce((n,chunk)=>n+chunk.byteLength,0):data.chunks.length;
+        if(data.cursor!==cursor+advance)throw new Error("再接続APIの受信位置が不正です。");
         if(data.error)throw new Error(data.error);
         if(data.status>=400&&data.done){
-          const detail=data.chunks.join("");let parsed;try{parsed=JSON.parse(detail)}catch{}
-          const error=new Error(parsed?.error?.message||detail||`生成エラー (${data.status})`);error.httpStatus=data.status;error.code=parsed?.error?.code;throw error;
+          const detail=binary?binary.map(bytes=>new TextDecoder().decode(bytes)).join(""):data.chunks.join("");let parsed;try{parsed=JSON.parse(detail)}catch{}
+          const error=new Error(parsed?.error?.message||detail||`生成エラー (${data.status})`);error.httpStatus=data.status;error.code=parsed?.error?.code;error.retryAfter=parsed?.retry_after;throw error;
         }
         cursor=data.cursor;done=data.done;
-        const text=data.chunks.join("");if(text)controller.enqueue(new TextEncoder().encode(text));
+        const text=data.chunks.join("");if(binary){for(const bytes of binary)if(bytes.length)controller.enqueue(bytes)}else if(text)controller.enqueue(new TextEncoder().encode(text));
         if(done){controller.close();return}
         if(text)return;
         await reconnectDelay(650,signal);

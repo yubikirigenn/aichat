@@ -11,79 +11,17 @@ function evidenceHash(text) {
   for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);a=Math.imul(a^c,16777619);b=Math.imul(b,33)^c}
   return `${text.length}:${a>>>0}:${b>>>0}`;
 }
-// Measures new observations, not verbosity, tool count or claimed plan progress.
-// Source-version aliases catch re-reads even when storage generates a new ref.
-function createInvestigationTracker(saved) {
-  saved||={};
-  const seen=new Set(saved.seen||[]),aliases=new Map(saved.aliases||[]),ranges=new Map(saved.ranges||[]);
-  let novel=false,stale=0;
-  const remember=value=>{const key=evidenceHash(JSON.stringify(value));if(seen.has(key))return false;seen.add(key);return true};
-  const range=(key,start,end)=>{
-    if(end<=start)return false;
-    const previous=ranges.get(key)||[];
-    const combined=[...previous,[start,end]].sort((a,b)=>a[0]-b[0]),merged=[];
-    for(const item of combined){const last=merged.at(-1);if(last&&item[0]<=last[1])last[1]=Math.max(last[1],item[1]);else merged.push([...item])}
-    const length=list=>list.reduce((sum,[a,b])=>sum+b-a,0);
-    ranges.set(key,merged);return length(merged)>length(previous);
-  };
-  const clean=value=>{
-    if(Array.isArray(value))return value.map(clean);
-    if(!value||typeof value!=="object")return value;
-    return Object.fromEntries(Object.keys(value).sort().filter(key=>!["at","updated_at","retrieved_at","elapsed_ms","ms","backend_timings","result_ref","runId","query","queries","search_query","next_action","verification"].includes(key)).map(key=>[key,clean(value[key])]));
-  };
-  return {
-    observe(call,raw,visible=raw){
-      const name=call.function?.name;let args={};try{args=JSON.parse(call.function.arguments||"{}")}catch{}
-      if(toolFailed(call,raw))return;
-      if(/^workspace_(write|edit|append|rename|delete)_file$/.test(name)){
-        if(raw.changed!==false)novel=true;return;
-      }
-      if(["task_checkpoint","plan_create","plan_update","plan_finish","current_datetime"].includes(name))return;
-      if(visible.ok===false)return;
-      let fresh=false;
-      if(typeof raw.content==="string"&&["workspace_read_file","web_fetch"].includes(name)){
-        const body=raw.full_content??raw.content,key=`source:${raw.path||raw.url}:${evidenceHash(body)}`;
-        if(visible.result_ref)aliases.set(visible.result_ref,key);
-        // Only credit what was actually sent to the model, not a stored full page.
-        if(visible.truncated){fresh=range(key,0,Math.min(2200,raw.content.length));fresh=range(key,Math.max(0,raw.content.length-400),raw.content.length)||fresh}
-        else fresh=range(key,0,raw.content.length);
-      }else if(name==="tool_result_read"){
-        const key=aliases.get(args.result_ref)||args.result_ref;
-        fresh=range(`${key}${raw.view==="json"?":json":""}`,raw.offset,raw.next_offset);
-      }else if(name==="workspace_preview"){
-        fresh=remember({preview:raw.entry,missing:raw.missing,events:(raw.events||[]).filter(e=>e.kind!=="ready").map(e=>({kind:e.kind,message:e.message,...(e.kind==="click"?{at:e.at}:{})}))});
-      }else if(name==="tool_result_search"){
-        const key=aliases.get(args.result_ref)||args.result_ref;
-        for(const match of raw.matches||[]){fresh=range(`${key}${raw.view==="json"?":json":""}`,match.offset,match.offset+match.excerpt.length)||fresh}
-      }else fresh=remember(clean(raw));
-      novel=fresh||novel;
-    },
-    finishRound(){stale=novel?0:stale+1;novel=false;return stale>=5?"finalize":stale>=3?"redirect":"continue"},
-    snapshot(){return {seen:[...seen].slice(-300),aliases:[...aliases].slice(-200),ranges:[...ranges].slice(-200)}},
-  };
-}
+// Repetition is evaluated by the supervising model, not by read/failure counts.
+// Explicitly refused operations remain permission boundaries, not AI heuristics.
 function createToolFailureTracker(seed=[]) {
-  const failures=new Map(),denied=new Set(),reads=new Map();let blocked=0;
-  for(const item of seed){
-    if(/^workspace_(write|edit|append|rename|delete)_file$/.test(item.name)&&item.status?.startsWith("completed")){reads.clear();continue}
-    if(!(item.read_only&&item.status==="completed"))continue;
-    const call={function:{name:item.name,arguments:item.arguments_excerpt}};
-    try{JSON.parse(item.arguments_excerpt);const key=stableToolKey(call);reads.set(key,(reads.get(key)||0)+1)}catch{}
-  }
+  const denied=new Set();
+  for(const item of seed)if(item.result?.code==="user_denied")denied.add(stableToolKey({function:{name:item.name,arguments:item.arguments_excerpt}}));
   return {
-    check(call){
-      if((reads.get(stableToolKey(call))||0)>=3){blocked++;return {ok:false,code:"repeated_read",error:"同一条件の読取を3回完了済みです。調査のループを防ぐため抑止しました。",next_action:"既存の取得結果・参照IDを使って判断してください。別範囲・別仮説の検証かworkspace_previewで実行時情報を確認し、task_checkpointに判明点と次の手順を残してください。"}}
-      if(denied.has(stableToolKey(call))){blocked++;return {ok:false,code:"tool_permission_denied",error:"ユーザーが拒否した操作は再実行できません。",retryable:false,next_action:"拒否された操作を繰り返さず、既存データを保持して別の手段を使ってください。"}}
-      if((failures.get(stableToolKey(call))||0)<2)return null;
-      blocked++;
-      return {ok:false,code:"repeated_tool_failure",error:"同じツール・引数で2回失敗したため、再実行を抑止しました。",retryable:false,next_action:"同じ呼び出しを繰り返さず、引数または手段を変更してください。必須条件を満たせない場合は不足情報をユーザーに確認してください。"};
-    },
-    observe(call,result){const key=stableToolKey(call);if(result?.code==="user_denied")denied.add(key);if(toolFailed(call,result))failures.set(key,(failures.get(key)||0)+1);else{failures.delete(key);if(READ_ONLY_TOOLS.has(call.function?.name))reads.set(key,(reads.get(key)||0)+1);else if(/^workspace_(write|edit|append|rename|delete)_file$/.test(call.function?.name))reads.clear()}},
-    get blockedCount(){return blocked},
+    check(call){return denied.has(stableToolKey(call))?{ok:false,code:"tool_permission_denied",error:"ユーザーが拒否した操作は再実行できません。",retryable:false,next_action:"拒否された操作を繰り返さず、既存データを保持して別の手段を使ってください。"}:null},
+    observe(call,result){if(result?.code==="user_denied")denied.add(stableToolKey(call))},
   };
 }
-async function runToolBatch(calls,{execute,onStart=()=>{},onFinish=()=>{},signal,concurrency=3,tracker=createToolFailureTracker(),maxCalls=80}={}) {
-  if(calls.length>maxCalls)throw new Error("ツール実行数の上限です。調査範囲を絞ってください。");
+async function runToolBatch(calls,{execute,onStart=()=>{},onFinish=()=>{},signal,concurrency=3,tracker=createToolFailureTracker()}={}) {
   const outcomes=new Array(calls.length);
   const checkAbort=()=>{if(signal?.aborted)throw new DOMException("Stopped","AbortError")};
   const locks=new Map();
@@ -177,7 +115,7 @@ function conversationWindow(messages,budget=240000) {
   // be recovered from the original chat by its unchanged message index.
   if(total>budget)for(const [index,m] of visible.entries()){
     if(index>=latestRound||!(["assistant","tool"].includes(m.role))||typeof m.content!=="string"||m.content.length<1600)continue;
-    const originalIndex=start+index;
+    const originalIndex=Number.isInteger(m._historyIndex)?m._historyIndex:start+index;
     reweight(m,()=>{m.content=m.role==="tool"
       ? JSON.stringify({truncated:true,history_message_index:originalIndex,excerpt:m.content.slice(0,500),next_action:`必要な内容はchat_history_read(start=${originalIndex}, count=1)で再読取してください。元データは削除していません。`})
       : m.content.slice(0,1000)+`\n[途中省略。chat_history_read(start=${originalIndex}, count=1)で原文を確認できます。]`});
