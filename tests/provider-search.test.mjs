@@ -28,6 +28,11 @@ test("batch runs three queries concurrently, preserves partial success and merge
 const server=readFileSync(new URL("../server.mjs",import.meta.url),"utf8");
 const adapter=server.slice(server.indexOf("function adaptProviderBody("),server.indexOf("async function providerFetch("));
 const adapt=runInNewContext(adapter+";adaptProviderBody");
+test("generation output reservation respects the selected model published limit",()=>{
+  const model=MODEL_CATALOG.find(m=>m.id==="liquid/lfm-2.5-2.6b:free");
+  const body={model:model.id,max_tokens:16384};const result=adapt(PROVIDERS.openrouter,body,model);
+  assert.equal(result.max_tokens,8192);assert.equal(body.max_tokens,16384);
+});
 test("Groq uses model-specific thinking controls for ON and OFF",()=>{
   for(const model of MODEL_CATALOG.filter(m=>m.provider==="groq"))for(const enabled of [true,false]){
     const result=adapt(PROVIDERS.groq,{model:model.id,reasoning:{enabled},reasoning_format:"raw",include_reasoning:true},model);

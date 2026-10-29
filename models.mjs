@@ -1,4 +1,4 @@
-// Curated snapshot checked on 2026-10-20 (JST).
+// Curated snapshot checked on 2026-10-30 (JST), using official catalogs/pricing.
 // Free-tier models still require an eligible account. XPL is retained only as a
 // suspended selection; its promotional badge is not proof of zero billing.
 // Availability and rate limits can change; the server still validates every
@@ -55,6 +55,8 @@ function model(provider, id, name, options = {}) {
     provider,
     id,
     name,
+    contextLength: options.contextLength || (provider === "gemini" || provider === "tokenharbor" ? 1048576 : provider === "groq" ? 131072 : null),
+    maxOutputTokens: options.maxOutputTokens || (provider === "gemini" ? 65536 : provider === "tokenharbor" ? 128000 : provider === "groq" ? (id.startsWith("qwen/") ? 16384 : 65536) : null),
     vision: Boolean(options.vision),
     inputModalities: options.inputModalities || (options.vision ? ["text", "image"] : ["text"]),
     outputModalities: options.outputModalities || ["text"],
@@ -87,37 +89,23 @@ const EXPERIENTIAL_MODEL_CATALOG = EXPERIENTIAL_SUSPENDED_MODELS.map(
 );
 
 const OPENROUTER_FREE_MODELS = Object.freeze([
-  ["minimax/minimax-m3.1-flash:free", "MiniMax M3.1 Flash", { vision: true }],
-  ["xingchen-agi/xing4.0-29b-a4b:free", "Xing4.0 29B A4B", {}],
-  ["nvidia/nemotron-3.5-super-vl:free", "NVIDIA Nemotron 3.5 Super VL", { vision: true }],
-  ["cohere/north-mini-code:free", "Cohere North Mini Code", {}],
-  ["dots-studio/dots-3-note-preview:free", "Dots3 Note Preview", {
-    vision: true,
-    freeLabel: "FREE · 12/31",
-    note: "OpenRouter model API lists this free endpoint through 2026-12-31.",
-  }],
-  ["google/gemma-4-26b-a4b-it:free", "Gemma 4 26B A4B", { vision: true }],
-  ["google/gemma-4-31b-it:free", "Gemma 4 31B", { vision: true }],
-  ["liquid/lfm-2.5-2.6b:free", "LFM2.5 2.6B", {}],
-  ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "NVIDIA Nemotron 3 Nano Omni", { vision: true }],
-  ["nvidia/nemotron-3-super-120b-a12b:free", "NVIDIA Nemotron 3 Super", {}],
-  ["nvidia/nemotron-3-ultra-550b-a55b:free", "NVIDIA Nemotron 3 Ultra", {}],
-  ["nvidia/nemotron-3.5-content-safety:free", "NVIDIA Nemotron 3.5 Content Safety", {
-    vision: true,
-    supportsTools: false,
-  }],
-  ["nvidia/nemotron-3.5-lightning:free", "NVIDIA Nemotron 3.5 Lightning", {}],
-  ["openrouter/free", "Free Models Router", { vision: true }],
-  ["poolside/laguna-s-2.1:free", "Laguna S 2.1", {
-    freeLabel: "FREE · 10/31",
-    note: "OpenRouter model API lists this free endpoint through 2026-10-31.",
-  }],
-  ["poolside/laguna-xs-2.1:free", "Laguna XS 2.1", {
-    freeLabel: "FREE · 10/31",
-    note: "OpenRouter model API lists this free endpoint through 2026-10-31.",
-  }],
-  ["thinkingmachines/inkling:free", "Inkling", { vision: true }],
-  ["thinkingmachines/inkling-small:free", "Inkling Small", { vision: true }],
+  ["recursive/flint-v1.0:free","Flint",{"vision":false,"contextLength":262144,"maxOutputTokens":235929,"supportsTools":true,"supportsReasoning":true}],
+  ["xingchen-agi/xing4.0-29b-a4b:free","Xing4.0 29B A4B",{"vision":false,"contextLength":262144,"maxOutputTokens":235929,"supportsTools":true,"supportsReasoning":true}],
+  ["nvidia/nemotron-3.5-super-vl:free","Nemotron 3.5 Super VL",{"vision":true,"contextLength":1000000,"maxOutputTokens":131072,"supportsTools":true,"supportsReasoning":true}],
+  ["dots-studio/dots-3-note-preview:free","Dots3-Note Preview",{"vision":true,"contextLength":512000,"maxOutputTokens":460800,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 12/31","note":"OpenRouter free endpoint expires 2026-12-31."}],
+  ["liquid/lfm-2.5-2.6b:free","LFM2.5-2.6B",{"vision":false,"contextLength":65536,"maxOutputTokens":8192,"supportsTools":true,"supportsReasoning":true}],
+  ["nvidia/nemotron-3.5-lightning:free","Nemotron 3.5 Lightning",{"vision":false,"contextLength":1000000,"maxOutputTokens":65536,"supportsTools":true,"supportsReasoning":true}],
+  ["thinkingmachines/inkling-small:free","Inkling Small",{"vision":true,"contextLength":1048576,"maxOutputTokens":262144,"supportsTools":true,"supportsReasoning":true}],
+  ["poolside/laguna-s-2.1:free","Laguna S 2.1",{"vision":false,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 10/31","note":"OpenRouter free endpoint expires 2026-10-31."}],
+  ["thinkingmachines/inkling:free","Inkling",{"vision":true,"contextLength":1048576,"maxOutputTokens":262144,"supportsTools":true,"supportsReasoning":true}],
+  ["poolside/laguna-xs-2.1:free","Laguna XS 2.1",{"vision":false,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 10/31","note":"OpenRouter free endpoint expires 2026-10-31."}],
+  ["cohere/north-mini-code:free","North Mini Code",{"vision":false,"contextLength":256000,"maxOutputTokens":64000,"supportsTools":true,"supportsReasoning":true}],
+  ["nvidia/nemotron-3.5-content-safety:free","Nemotron 3.5 Content Safety",{"vision":true,"contextLength":128000,"maxOutputTokens":8192,"supportsTools":false,"supportsReasoning":true}],
+  ["nvidia/nemotron-3-ultra-550b-a55b:free","Nemotron 3 Ultra",{"vision":false,"contextLength":1000000,"maxOutputTokens":65536,"supportsTools":true,"supportsReasoning":true}],
+  ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free","Nemotron 3 Nano Omni",{"vision":true,"contextLength":256000,"maxOutputTokens":65536,"supportsTools":true,"supportsReasoning":true}],
+  ["google/gemma-4-26b-a4b-it:free","Gemma 4 26B A4B",{"vision":true,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true}],
+  ["google/gemma-4-31b-it:free","Gemma 4 31B",{"vision":true,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true}],
+  ["openrouter/free","Free Models Router",{"vision":true,"contextLength":200000,"maxOutputTokens":null,"supportsTools":true,"supportsReasoning":true}]
 ]);
 
 const OPENROUTER_MODEL_CATALOG = OPENROUTER_FREE_MODELS.map(
@@ -125,7 +113,7 @@ const OPENROUTER_MODEL_CATALOG = OPENROUTER_FREE_MODELS.map(
 );
 
 export const MODEL_CATALOG = Object.freeze([
-  // Official page's freeRows checked 2026-10-20 JST. Never substitute paid base IDs.
+  // Official page's freeRows checked 2026-10-30 JST. Never substitute paid base IDs.
   ...[
     ["deepseek-v4.1-flash:free", "DeepSeek V4.1 Flash", "無料枠の対象ルートです。"],
     ["mimo-v2.6-flash:free", "MiMo V2.6 Flash", "無料枠の対象ルートです。"],
@@ -149,7 +137,7 @@ export const MODEL_CATALOG = Object.freeze([
   // Suspended Experiential Labs selection (not an assertion of free billing).
   ...EXPERIENTIAL_MODEL_CATALOG,
 
-  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-20.
+  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-30.
   ...OPENROUTER_MODEL_CATALOG,
 ]);
 

@@ -7,6 +7,16 @@ const source=readFileSync(new URL("../public/harness.js",import.meta.url),"utf8"
 const h=runInNewContext(source+";({runToolBatch,createToolFailureTracker,toolResultPreview,resultSlice,observationText,searchStoredResult,conversationWindow,beginResumeState,checkpointTool,resumeContext,validResumeState})",{DOMException});
 const call=(name,id)=>({id,function:{name,arguments:JSON.stringify({id})}});
 const operation=(name,args)=>({function:{name,arguments:JSON.stringify(args)}});
+test("a tool-local AbortError is returned to the model without cancelling the batch",async()=>{
+  let completed=0;const outcomes=await h.runToolBatch([call("web_fetch","one"),call("web_fetch","two")],{signal:new AbortController().signal,execute:async c=>{if(c.id==="one")throw new DOMException("remote abort","AbortError");completed++;return {result:{ok:true}}}});
+  assert.equal(outcomes[0].result.ok,false);assert.match(outcomes[0].result.error,/remote abort/);assert.equal(outcomes[1].result.ok,true);assert.equal(completed,1);
+});
+test("a normal active checkpoint is not injected as an interruption/handoff",()=>{
+  const chat={messages:[{role:"user",content:"keep working",at:"now"}]};chat.resumeState=h.beginResumeState(chat);
+  h.checkpointTool(chat.resumeState,call("workspace_read_file","read"),"read",{ok:true});
+  assert.equal(h.resumeContext(chat),"");chat.resumeState.status="interrupted";chat.resumeState.reason="network lost";
+  assert.match(h.resumeContext(chat),/network lost/);
+});
 test("raw source ranges preserve literal newlines and quotes; metadata requires JSON view",()=>{
   const content='function start() {\n  const quote = "value";\n}\n';
   const record={text:JSON.stringify({path:"game.js",content,full_content:content+"tail"})};

@@ -170,6 +170,7 @@ function removeAccessPassword(body) {
 
 function adaptProviderBody(provider, body, model = null) {
   const adapted = { ...body };
+  if(Number.isFinite(model?.maxOutputTokens))for(const key of ["max_tokens","max_completion_tokens"])if(Number.isFinite(adapted[key]))adapted[key]=Math.min(adapted[key],model.maxOutputTokens);
   // This app-only hint is supported upstream only on OpenRouter.
   delete adapted.cache_session_id;
   delete adapted.session_id;

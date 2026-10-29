@@ -39,11 +39,11 @@ test("client JavaScript parses", () => {
   }
 });
 
-test("2026-10-20 free catalog includes new routes and rejects withdrawn or paid alternatives",()=>{
+test("2026-10-30 free catalog includes new routes, capacity metadata and rejects withdrawn or paid alternatives",()=>{
   const openrouter=MODEL_CATALOG.filter(m=>m.provider==="openrouter");
-  assert.equal(openrouter.length,18);
+  assert.equal(openrouter.length,17);
   for(const [id,vision] of [
-    ["minimax/minimax-m3.1-flash:free",true],
+    ["recursive/flint-v1.0:free",false],
     ["xingchen-agi/xing4.0-29b-a4b:free",false],
     ["nvidia/nemotron-3.5-super-vl:free",true],
   ]){
@@ -54,6 +54,9 @@ test("2026-10-20 free catalog includes new routes and rejects withdrawn or paid 
   assert.deepEqual(MODEL_CATALOG.filter(m=>m.provider==="tokenharbor").map(m=>m.id).sort(),["deepseek-v4.1-flash:free","mimo-v2.6-flash:free"]);
   for(const id of ["claude-haiku-5.5:free","claude-haiku-5.5","deepseek-v4.1-flash","mimo-v2.6-flash"])assert.equal(findModel("tokenharbor",id),null);
   assert.equal(findModel("gemini","gemini-4-argon"),null);
+  assert.equal(findModel("openrouter","minimax/minimax-m3.1-flash:free"),null);
+  assert.equal(findModel("openrouter","nvidia/nemotron-3-ultra-550b-a55b:free").contextLength,1000000);
+  assert.equal(findModel("openrouter","liquid/lfm-2.5-2.6b:free").maxOutputTokens,8192);
   assert.match(findModel("gemini","gemini-3.7-flash").note,/3.8 Flash/);
   assert.match(findModel("gemini","gemini-3.5-flash").note,/3.6 Flash/);
   for(const id of ["gemini-2.5-pro","gemini-2.5-flash","gemini-2.5-flash-lite"])assert.match(findModel("gemini",id).note,/既存利用者/);

@@ -32,33 +32,77 @@ test("rate waits honor Retry-After and can be cancelled without submitting more 
   assert.equal(pure.rateLimitDelay("Thu, 01 Jan 1970 00:01:00 GMT",0),60000);
   const controller=new AbortController();const waiting=pure.waitForRateLimit("300",controller.signal);controller.abort();await assert.rejects(waiting,e=>e.name==="AbortError");
 });
-function integration(chat,testRequest){
-  const signal=new AbortController().signal;
+function integration(chat,testRequest,model={key:"test:large",contextLength:131072,maxOutputTokens:8192}){
+  const controller=new AbortController();
   const source=html.slice(html.indexOf("async function requestAuxiliaryAI("),html.indexOf("function buildTools("));
-  return runInNewContext(history+harness+continuation+source+";requestAuxiliaryAI=(_chat,args)=>testRequest(args);({prepareApiMessages,compressChatContext,apiMessages,reviewRunWithAI})",{
-    DOMException,Date,abortController:{signal},testRequest,settings:{systemPrompt:""},activeChat:()=>chat,buildSystemPrompt:()=>"system",buildTools:()=>[],persistChats:async()=>{},nowISO:()=>"now",upsertActivity:()=>{},setStatus:()=>{},safeImageDataUrl:()=>false,
+  const api=runInNewContext(history+harness+continuation+source+";requestAuxiliaryAI=(_chat,args)=>testRequest(args);({prepareApiMessages,compressChatContext,apiMessages,reviewRunWithAI})",{
+    DOMException,AbortController,Date,abortController:controller,testRequest,settings:{systemPrompt:"",maxTokens:8192},selectedModel:()=>model,activeChat:()=>chat,buildSystemPrompt:()=>"system stays intact",buildTools:()=>[],persistChats:async()=>{},nowISO:()=>"now",upsertActivity:()=>{},setStatus:()=>{},safeImageDataUrl:()=>true,
   });
+  return {...api,controller};
 }
-test("oversized current-turn input is automatically summarized while original messages and images stay saved",async()=>{
-  const chat={messages:[{role:"user",content:"important latest request "+"x".repeat(300000),images:[{name:"image",dataUrl:"unchanged-image"}]}]},original=JSON.stringify(chat.messages);let calls=0;
-  const api=integration(chat,async({purpose})=>{assert.equal(purpose,"compression");calls++;return "重要な依頼と未完了の作業を保持。原文はindex 0。"});
+function researchChat(){
+  const messages=[{role:"user",content:"previous request"},{role:"assistant",content:"prior observations"},{role:"user",content:"latest exact request",images:[{name:"image",dataUrl:"data:image/png;base64,untouched"}]}];
+  for(let i=0;i<8;i++)messages.push({role:"assistant",internal:true,content:"work "+i,tool_calls:[{id:"c"+i,function:{name:"workspace_read_file",arguments:JSON.stringify({path:"game.js"})}}]},{role:"tool",internal:true,tool_call_id:"c"+i,name:"workspace_read_file",content:(i<5?"old data ".repeat(12000):"recent result "+i)});
+  return {messages};
+}
+test("large-model current input and huge archived UI metadata do not trigger early compression",async()=>{
+  const chat={messages:[{role:"user",content:"exact request "+"x".repeat(300000)}]};let calls=0;
+  const api=integration(chat,async()=>{calls++;return "unexpected"},{key:"test:million",contextLength:1000000,maxOutputTokens:65536});
   const messages=await api.prepareApiMessages(chat);
-  assert.ok(calls>1);assert.ok(JSON.stringify(messages).length<30000);assert.equal(JSON.stringify(chat.messages),original);assert.equal(chat.contextSummary.through,1);
-  assert.match(messages[0].content,/引継ぎ要約/);assert.equal(pure.usableContextSummary(chat).text,chat.contextSummary.text);
-  const before=calls;await api.prepareApiMessages(chat);assert.equal(calls,before);
-  chat.messages[0].content="changed "+chat.messages[0].content;assert.equal(pure.usableContextSummary(chat),null);await api.prepareApiMessages(chat);assert.ok(calls>before);
+  assert.equal(calls,0);assert.equal(messages[1].content,chat.messages[0].content);assert.equal(chat.contextSummary,undefined);
+  chat.messages.push({role:"assistant",content:"short reply",toolEvents:[{name:"read",detail:{result:{content:"z".repeat(1000000)}}}]});
+  await api.prepareApiMessages(chat);assert.equal(calls,0);
 });
-test("completed tool protocols are summarized together and originals remain available for history reads",async()=>{
-  const chat={messages:[{role:"user",content:"fix game"},{role:"assistant",content:"",internal:true,tool_calls:[{id:"call",function:{name:"workspace_write_file",arguments:'{"path":"game.js","content":"done"}'}}]},{role:"tool",internal:true,tool_call_id:"call",name:"workspace_write_file",content:"z".repeat(260000)}]},original=JSON.stringify(chat.messages);let source="";
-  const api=integration(chat,async({input})=>{source+=JSON.parse(input).fragment;return "game.jsへ書込済み。動作は未検証。"});
-  const messages=await api.prepareApiMessages(chat);assert.match(source,/workspace_write_file/);assert.match(source,/game.js/);assert.equal(JSON.stringify(chat.messages),original);
-  assert.equal(messages.some(m=>m.role==="tool"),false);assert.equal(messages.some(m=>m.tool_calls),false);
+test("compaction replaces only an old complete prefix, preserving request, images, system and recent tool protocols",async()=>{
+  const chat=researchChat(),original=JSON.stringify(chat.messages);let calls=0,source="";
+  const api=integration(chat,async({purpose,input})=>{assert.equal(purpose,"compression");calls++;source+=JSON.parse(input).fragment;return "Observed old source facts; game.js was read. Raw history indices remain available."});
+  const messages=await api.prepareApiMessages(chat);
+  assert.ok(calls>1);assert.equal(JSON.stringify(chat.messages),original);assert.equal(chat.contextSummary.version,2);
+  assert.equal(messages[0].content,"system stays intact");assert.doesNotMatch(messages[0].content,/引継|要約/);
+  assert.match(source,/workspace_read_file/);assert.doesNotMatch(source,/latest exact request/);
+  const memory=messages.find(m=>m.role==="assistant"&&m.content?.includes('"type":"compressed_history"'));assert.ok(memory);
+  const latest=messages.find(m=>m.role==="user");assert.equal(latest.content[0].text,"latest exact request");assert.equal(latest.content[1].image_url.url,chat.messages[2].images[0].dataUrl);
+  for(let i=5;i<8;i++){assert.ok(messages.some(m=>m.tool_calls?.[0]?.id==="c"+i));assert.ok(messages.some(m=>m.tool_call_id==="c"+i&&m.content==="recent result "+i))}
+  assert.equal(messages.some(m=>m.tool_call_id==="c0"),false);
+  assert.equal(pure.usableContextSummary(chat).text,chat.contextSummary.text);
+  const before=calls;await api.prepareApiMessages(chat);assert.equal(calls,before);
+  chat.messages[0].content="edited";assert.equal(pure.usableContextSummary(chat),null);
+  await api.prepareApiMessages(chat);assert.ok(calls>before);
+});
+test("failed proactive compression cancels only its child requests and keeps the main run alive",async()=>{
+  const chat=researchChat(),original=JSON.stringify(chat.messages);
+  const api=integration(chat,async()=>{throw new DOMException("aux transport interrupted","AbortError")},{key:"test:fits",contextLength:190000,maxOutputTokens:8192});
+  const messages=await api.prepareApiMessages(chat);
+  assert.equal(api.controller.signal.aborted,false);assert.equal(chat.contextSummary,undefined);assert.ok(chat.compactionRetryAt>Date.now());assert.equal(JSON.stringify(chat.messages),original);assert.ok(messages.some(m=>m.tool_call_id==="c0"));
+});
+test("failed forced compression preserves original error and never aborts the main controller",async()=>{
+  const chat=researchChat(),api=integration(chat,async()=>{throw new Error("summary provider unavailable")});
+  await assert.rejects(api.compressChatContext(chat,{force:true}),/summary provider unavailable/);
+  assert.equal(api.controller.signal.aborted,false);
 });
 test("supervisor failure does not block execution, and ask_user comes from the AI decision",async()=>{
   const chat={messages:[{role:"user",content:"check runtime"}],resumeState:{operations:[{name:"workspace_preview",status:"completed"}],notes:{findings:["unknown runtime"]}}};
-  const failed=integration(chat,async()=>{throw new Error("quota unavailable")});assert.equal(await failed.reviewRunWithAI(chat,3,{}),null);
+  const failed=integration(chat,async()=>{throw new DOMException("monitor transport aborted","AbortError")});assert.equal(await failed.reviewRunWithAI(chat,3,{}),null);assert.equal(failed.controller.signal.aborted,false);
   const active=integration(chat,async({purpose,input})=>{assert.equal(purpose,"supervision");assert.match(input,/workspace_preview/);return '{"action":"ask_user","reason":"操作後の挙動が未観測","guidance":"クリック後の画面を質問"}'});
   const decision=await active.reviewRunWithAI(chat,3,{});assert.equal(decision.action,"ask_user");assert.equal(chat.supervision.action,"ask_user");
+});
+test("abort classification distinguishes the stop button from child transport failures",()=>{
+  const api=runInNewContext(continuation+";({generationFailureMessage,contextPressure,recordContextUsage})",{DOMException});
+  const abort=new DOMException("provider cancelled its transport","AbortError"),controller=new AbortController();
+  assert.doesNotMatch(api.generationFailureMessage(abort,controller.signal),/^生成を停止しました/);
+  controller.abort({code:"user_stop"});assert.equal(api.generationFailureMessage(abort,controller.signal),"生成を停止しました。");
+  assert.doesNotMatch(html,/if\(!signal\?\.aborted\)abortController\?\.abort/);
+});
+test("token pressure uses model capacity and measured prompt usage, not archived source bytes",()=>{
+  const api=runInNewContext(continuation+";({contextPressure,recordContextUsage})",{DOMException});
+  const chat={},model={key:"route",contextLength:1000000,maxOutputTokens:65536},messages=[{role:"user",content:"word ".repeat(60000)}];
+  const initial=api.contextPressure(chat,messages,model,16384);assert.equal(initial.shouldCompact,false);
+  api.recordContextUsage(chat,messages,model,{prompt_tokens:100000});assert.ok(api.contextPressure(chat,messages,model,16384).input>=99000);
+  assert.equal(api.contextPressure(chat,messages,{...model,key:"other",contextLength:65536,maxOutputTokens:8192},8192).shouldCompact,true);
+});
+test("legacy handoff summaries are invalidated instead of promoted into System instructions",()=>{
+  const chat=researchChat();chat.contextSummary={through:2,text:"old handoff"};assert.equal(pure.usableContextSummary(chat),null);
+  const api=integration(chat,async()=>"unused");const messages=api.apiMessages(chat);assert.equal(messages[0].content,"system stays intact");assert.ok(messages.some(m=>m.tool_call_id==="c0"));
 });
 test("fixed round/tool limits and heuristic stopping logic are absent from the running harness",()=>{
   assert.doesNotMatch(html,/Tool Callingが最大|toolCallsUsed>80|settings\.maxRounds|createInvestigationTracker|blockedCount>=3|1回の生成が3分/);

@@ -330,6 +330,8 @@ test("browser: stable streaming, real generation flow, scrolling and responsive 
     // Preview generation need not open the panel; open it for a real click.
     await page.evaluate(()=>{togglePlay(true);setPlayTab("preview",false)});
     const frame=page.frameLocator("#previewFrame");
+    // Wait for the newly revealed iframe to complete layout before native input.
+    assert.ok(await frame.locator("#startBtn").evaluate(el=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(el.getBoundingClientRect().width)))))>0);
     await frame.locator("#startBtn").click();
     assert.equal(await frame.locator("#status").textContent(),"started");
     assert.equal(await frame.locator("#status").evaluate(el=>getComputedStyle(el).color),"rgb(1, 2, 3)");

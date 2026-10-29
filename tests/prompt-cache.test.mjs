@@ -32,7 +32,7 @@ test("tool rounds and volatile recovery state preserve the static system/history
   assert.deepEqual(retry.slice(0,first.length),first);
   assert.equal(retry.at(-1).role,"user");assert.match(retry.at(-1).content,/別の検索語/);
   p.setOmitted(4);const trimmed=plain(p.apiMessages(chat,"復旧"));
-  assert.equal(trimmed[0].content,first[0].content);assert.match(trimmed.at(-1).content,/0〜3/);
+  assert.equal(trimmed[0].content,first[0].content);assert.doesNotMatch(trimmed.at(-1).content,/0〜3/);assert.ok(trimmed.some(m=>m.tool_call_id==="t"));
   assert.equal(JSON.stringify(chat),original);
 });
 test("native search and client fallback share ordered function definitions without mutation",()=>{
