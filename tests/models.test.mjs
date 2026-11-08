@@ -39,10 +39,11 @@ test("client JavaScript parses", () => {
   }
 });
 
-test("2026-10-30 free catalog includes new routes, capacity metadata and rejects withdrawn or paid alternatives",()=>{
+test("2026-11-09 free catalog includes current routes, capacity metadata and rejects withdrawn or paid alternatives",()=>{
   const openrouter=MODEL_CATALOG.filter(m=>m.provider==="openrouter");
-  assert.equal(openrouter.length,17);
+  assert.equal(openrouter.length,13);
   for(const [id,vision] of [
+    ["liquid/lfm-3-1.7b:free",false],
     ["recursive/flint-v1.0:free",false],
     ["xingchen-agi/xing4.0-29b-a4b:free",false],
     ["nvidia/nemotron-3.5-super-vl:free",true],
@@ -59,7 +60,11 @@ test("2026-10-30 free catalog includes new routes, capacity metadata and rejects
   assert.equal(findModel("openrouter","liquid/lfm-2.5-2.6b:free").maxOutputTokens,8192);
   assert.match(findModel("gemini","gemini-3.7-flash").note,/3.8 Flash/);
   assert.match(findModel("gemini","gemini-3.5-flash").note,/3.6 Flash/);
-  for(const id of ["gemini-2.5-pro","gemini-2.5-flash","gemini-2.5-flash-lite"])assert.match(findModel("gemini",id).note,/既存利用者/);
+  for(const id of ["gemini-2.5-pro","gemini-2.5-flash"])assert.match(findModel("gemini",id).note,/既存利用者/);
+  assert.doesNotMatch(findModel("gemini","gemini-2.5-flash-lite").note,/既存利用者|自動転送/);
+  const preview=findModel("gemini","gemini-3-flash-preview");assert.equal(preview.vision,true);assert.equal(preview.supportsTools,true);assert.equal(preview.contextLength,1048576);
+  assert.match(findModel("openrouter","liquid/lfm-2.5-2.6b:free").note,/2026-11-13/);
+  for(const id of ["thinkingmachines/inkling:free","thinkingmachines/inkling-small:free","poolside/laguna-s-2.1:free","poolside/laguna-xs-2.1:free","nvidia/nemotron-3.5-content-safety:free"])assert.equal(findModel("openrouter",id),null);
 });
 
 test("saved removed provider and model recover to valid selections", () => {
@@ -71,6 +76,8 @@ test("saved removed provider and model recover to valid selections", () => {
     { provider: "openrouter", model: "stealth/space-bunny-alpha" },
     { provider: "openrouter", model: "apodex/apodex-1.1-mini:free" },
     { provider: "openrouter", model: "inclusionai/ling-3.1-flash" },
+    { provider: "openrouter", model: "poolside/laguna-s-2.1:free" },
+    { provider: "openrouter", model: "thinkingmachines/inkling:free" },
     { provider: "tokenharbor", model: "claude-haiku-5.5:free" },
   ]) {
     const settings = { ...saved };

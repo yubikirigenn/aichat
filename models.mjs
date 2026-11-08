@@ -1,4 +1,4 @@
-// Curated snapshot checked on 2026-10-30 (JST), using official catalogs/pricing.
+// Curated snapshot checked on 2026-11-09 (JST), using official catalogs/pricing.
 // Free-tier models still require an eligible account. XPL is retained only as a
 // suspended selection; its promotional badge is not proof of zero billing.
 // Availability and rate limits can change; the server still validates every
@@ -89,18 +89,14 @@ const EXPERIENTIAL_MODEL_CATALOG = EXPERIENTIAL_SUSPENDED_MODELS.map(
 );
 
 const OPENROUTER_FREE_MODELS = Object.freeze([
+  ["liquid/lfm-3-1.7b:free","LFM3-1.7B",{"vision":false,"contextLength":262144,"maxOutputTokens":8192,"supportsTools":true,"supportsReasoning":true}],
   ["recursive/flint-v1.0:free","Flint",{"vision":false,"contextLength":262144,"maxOutputTokens":235929,"supportsTools":true,"supportsReasoning":true}],
   ["xingchen-agi/xing4.0-29b-a4b:free","Xing4.0 29B A4B",{"vision":false,"contextLength":262144,"maxOutputTokens":235929,"supportsTools":true,"supportsReasoning":true}],
   ["nvidia/nemotron-3.5-super-vl:free","Nemotron 3.5 Super VL",{"vision":true,"contextLength":1000000,"maxOutputTokens":131072,"supportsTools":true,"supportsReasoning":true}],
   ["dots-studio/dots-3-note-preview:free","Dots3-Note Preview",{"vision":true,"contextLength":512000,"maxOutputTokens":460800,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 12/31","note":"OpenRouter free endpoint expires 2026-12-31."}],
-  ["liquid/lfm-2.5-2.6b:free","LFM2.5-2.6B",{"vision":false,"contextLength":65536,"maxOutputTokens":8192,"supportsTools":true,"supportsReasoning":true}],
+  ["liquid/lfm-2.5-2.6b:free","LFM2.5-2.6B",{"vision":false,"contextLength":65536,"maxOutputTokens":8192,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 11/13","note":"OpenRouter free endpoint expires 2026-11-13."}],
   ["nvidia/nemotron-3.5-lightning:free","Nemotron 3.5 Lightning",{"vision":false,"contextLength":1000000,"maxOutputTokens":65536,"supportsTools":true,"supportsReasoning":true}],
-  ["thinkingmachines/inkling-small:free","Inkling Small",{"vision":true,"contextLength":1048576,"maxOutputTokens":262144,"supportsTools":true,"supportsReasoning":true}],
-  ["poolside/laguna-s-2.1:free","Laguna S 2.1",{"vision":false,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 10/31","note":"OpenRouter free endpoint expires 2026-10-31."}],
-  ["thinkingmachines/inkling:free","Inkling",{"vision":true,"contextLength":1048576,"maxOutputTokens":262144,"supportsTools":true,"supportsReasoning":true}],
-  ["poolside/laguna-xs-2.1:free","Laguna XS 2.1",{"vision":false,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true,"freeLabel":"FREE · 10/31","note":"OpenRouter free endpoint expires 2026-10-31."}],
   ["cohere/north-mini-code:free","North Mini Code",{"vision":false,"contextLength":256000,"maxOutputTokens":64000,"supportsTools":true,"supportsReasoning":true}],
-  ["nvidia/nemotron-3.5-content-safety:free","Nemotron 3.5 Content Safety",{"vision":true,"contextLength":128000,"maxOutputTokens":8192,"supportsTools":false,"supportsReasoning":true}],
   ["nvidia/nemotron-3-ultra-550b-a55b:free","Nemotron 3 Ultra",{"vision":false,"contextLength":1000000,"maxOutputTokens":65536,"supportsTools":true,"supportsReasoning":true}],
   ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free","Nemotron 3 Nano Omni",{"vision":true,"contextLength":256000,"maxOutputTokens":65536,"supportsTools":true,"supportsReasoning":true}],
   ["google/gemma-4-26b-a4b-it:free","Gemma 4 26B A4B",{"vision":true,"contextLength":262144,"maxOutputTokens":32768,"supportsTools":true,"supportsReasoning":true}],
@@ -113,7 +109,7 @@ const OPENROUTER_MODEL_CATALOG = OPENROUTER_FREE_MODELS.map(
 );
 
 export const MODEL_CATALOG = Object.freeze([
-  // Official page's freeRows checked 2026-10-30 JST. Never substitute paid base IDs.
+  // Official page's freeRows checked 2026-11-09 JST. Never substitute paid base IDs.
   ...[
     ["deepseek-v4.1-flash:free", "DeepSeek V4.1 Flash", "無料枠の対象ルートです。"],
     ["mimo-v2.6-flash:free", "MiMo V2.6 Flash", "無料枠の対象ルートです。"],
@@ -121,12 +117,12 @@ export const MODEL_CATALOG = Object.freeze([
     vision: true, reasoningMode: "automatic",
     note: `${note} Token Harbor側で無料モデルを有効化してください。無料ルートでは入力・出力が保存される場合があります。Thinkingはモデルの自動設定を使用し、返された内容を表示します。ゲートウェイでの強制ON/OFFは未確認です。`,
   })),
-  ...["3.8-flash", "3.7-flash", "3.6-flash", "3.5-flash", "3.5-flash-lite", "3.1-flash-lite", "2.5-pro", "2.5-flash", "2.5-flash-lite"].map(version =>
+  ...["3.8-flash", "3.7-flash", "3.6-flash", "3.5-flash", "3.5-flash-lite", "3.1-flash-lite", "3-flash-preview", "2.5-pro", "2.5-flash", "2.5-flash-lite"].map(version =>
     model("gemini", `gemini-${version}`, `Gemini ${version.replace(/-/g, " ")}`, {
       vision: true, note: "Google AI StudioでFree Tierのプロジェクトのキーを使用。有料プロジェクトのキーでは課金されます。無料枠の入力は製品改善に利用される場合があります。"
         +(version==="3.7-flash"?" 互換ID。Google側でGemini 3.8 Flashへ自動転送されます。":"")
         +(version==="3.5-flash"?" 互換ID。Google側でGemini 3.6 Flashへ自動転送されます。":"")
-        +(version.startsWith("2.5-")?" 旧モデルを過去に利用した既存利用者向け。新規プロジェクトではGemini 3.8 Flashまたは3.5 Flash-Liteを使用してください。":""),
+        +(["2.5-pro","2.5-flash"].includes(version)?" 旧モデルを過去に利用した既存利用者向け。2026-12-01からGoogle側で後継Flashへ自動転送予定。新規プロジェクトではGemini 3.8 Flashまたは3.5 Flash-Liteを使用してください。":""),
     })),
   // Groq Free Plan Limits: chat-capable models from the current catalog.
   model("groq", "openai/gpt-oss-120b", "GPT OSS 120B"),
@@ -137,7 +133,7 @@ export const MODEL_CATALOG = Object.freeze([
   // Suspended Experiential Labs selection (not an assertion of free billing).
   ...EXPERIENTIAL_MODEL_CATALOG,
 
-  // OpenRouter zero-priced text-generation endpoints checked on 2026-10-30.
+  // OpenRouter zero-priced text-generation endpoints checked on 2026-11-09.
   ...OPENROUTER_MODEL_CATALOG,
 ]);
 
