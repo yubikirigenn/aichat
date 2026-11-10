@@ -149,3 +149,5 @@ export function findModel(providerId, modelId) {
 export function providerFor(providerId) {
   return PROVIDERS[providerId] || null;
 }
+
+export { model as createCatalogModel };

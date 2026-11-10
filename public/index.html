@@ -493,6 +493,7 @@ let running = false;
 let toolLog = [];
 let previewTimer = null;
 let modelCatalog = [...FALLBACK_MODELS];
+let pendingModelCatalog=null,modelCatalogRequest=null,lastModelCatalogCheck=0;
 let providerCatalog = [];
 let webSearchProvider = "legacy";
 let pendingImages = [];
@@ -754,19 +755,34 @@ function syncChips(){
   renderModelControls();
   syncQuickControls();
 }
+function applyPendingModelCatalog(){
+  if(running||!pendingModelCatalog)return;
+  const data=pendingModelCatalog;pendingModelCatalog=null;
+  modelCatalog=data.models;
+  if(Array.isArray(data.providers))providerCatalog=data.providers.filter(provider=>data.models.some(model=>model.provider===provider.id));
+  webSearchProvider=data.webSearch?.provider==="tavily"?"tavily":"legacy";
+  if(data.default&&!settings.model){settings.provider=data.default.provider;settings.model=data.default.model}
+  renderModelControls();syncChips();
+}
 async function loadModelCatalog(){
+  if(modelCatalogRequest)return modelCatalogRequest;
+  modelCatalogRequest=fetchModelCatalog().finally(()=>{modelCatalogRequest=null});return modelCatalogRequest;
+}
+async function fetchModelCatalog(){
   try{
-    const response=await fetch("/api/models",{headers:{Accept:"application/json"}});
+    const response=await fetch("/api/models",{headers:{Accept:"application/json"},cache:"no-store",signal:AbortSignal.timeout(10000)});
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
-    if(Array.isArray(data.models)&&data.models.length)modelCatalog=data.models;
-    if(Array.isArray(data.providers))providerCatalog=data.providers;
-    webSearchProvider=data.webSearch?.provider==="tavily"?"tavily":"legacy";
-    if(data.default&&!settings.model){settings.provider=data.default.provider;settings.model=data.default.model}
+    if(!Array.isArray(data.models)||!data.models.length||data.models.some(m=>typeof m.id!=="string"||typeof m.key!=="string"||typeof m.provider!=="string"))throw new Error("Invalid model catalog");
+    lastModelCatalogCheck=Date.now();pendingModelCatalog=data;applyPendingModelCatalog();
   }catch(error){
     console.warn("モデルカタログを読み込めませんでした",error);
   }
-  renderModelControls();syncChips();
+}
+function startModelCatalogPolling(){
+  const refresh=()=>{if(document.visibilityState==="visible"&&Date.now()-lastModelCatalogCheck>30000)void loadModelCatalog()};
+  setInterval(refresh,300000);document.addEventListener("visibilitychange",refresh);window.addEventListener("online",refresh);
+  setTimeout(refresh,30000);
 }
 
 function renderEditMode(){
@@ -2319,7 +2335,7 @@ async function sendMessage({recover=false}={}){
   }finally{
     delete c.runRound;delete c.recoveringRound;
     await persistChats();
-    running=false;abortController=null;renderEditMode();syncQuickControls();
+    running=false;abortController=null;renderEditMode();syncQuickControls();applyPendingModelCatalog();
   }
 }
 function structuredCloneSafe(v){ if(v==null)return null;try{return structuredClone(v)}catch{return JSON.parse(JSON.stringify(v))} }
@@ -2495,7 +2511,7 @@ for(const event of ["online","pageshow","focus"])window.addEventListener(event,(
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void recoverPendingGeneration()});
 
 async function init(){
-  applyTheme();syncChips();await loadModelCatalog();await openDB();await restoreChats();chatHistoryReady=false;await migrateLegacyWorkspace();renderToolLog();
+  applyTheme();syncChips();await loadModelCatalog();startModelCatalogPolling();await openDB();await restoreChats();chatHistoryReady=false;await migrateLegacyWorkspace();renderToolLog();
   if(!activeChatId&&chats.length)activeChatId=chats[0].id;
   if(!chats.length)createChat();else{renderChatList();renderThread({forceBottom:true});updateTitle();renderPlan()}
   await switchWorkspace();chatHistoryReady=true;await persistChats();

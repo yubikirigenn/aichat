@@ -5,7 +5,7 @@ import {once} from "node:events";
 
 test("browser reconnects after offline and reload, without an extra user message or model start",{skip:!process.env.CHAT_UI_BROWSER},async()=>{
   const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||"playwright");
-  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,PORT:"31303",APP_ACCESS_PASSWORD:"browser-test-password"},stdio:["ignore","pipe","pipe"]});
+  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,MODEL_AUTO_REFRESH:"false",PORT:"31303",APP_ACCESS_PASSWORD:"browser-test-password"},stdio:["ignore","pipe","pipe"]});
   let browser;
   try{
     await once(server.stdout,"data");

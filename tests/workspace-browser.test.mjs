@@ -5,7 +5,7 @@ import {once} from "node:events";
 
 test("browser: per-chat workspaces migrate safely and isolate tools, drafts, imports and previews",{skip:!process.env.CHAT_UI_BROWSER},async()=>{
   const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||"playwright");
-  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,PORT:"31304",APP_ACCESS_PASSWORD:"test"},stdio:["ignore","pipe","pipe"]});let browser;
+  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,MODEL_AUTO_REFRESH:"false",PORT:"31304",APP_ACCESS_PASSWORD:"test"},stdio:["ignore","pipe","pipe"]});let browser;
   try{
     await once(server.stdout,"data");browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
     const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));

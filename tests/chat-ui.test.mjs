@@ -38,7 +38,7 @@ test("partial tool activity retains streamed targets before execution",()=>{
 test("browser: stable streaming, real generation flow, scrolling and responsive panels",{skip:!process.env.CHAT_UI_BROWSER},async()=>{
   const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||"playwright");
   const {spawn}=await import("node:child_process");const {once}=await import("node:events");
-  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,PORT:"31302",APP_ACCESS_PASSWORD:"browser-test-password",TAVILY_API_KEY:"tvly-test-disabled",TAVILY_FREE_TIER_CONFIRMED:"false"},stdio:["ignore","pipe","pipe"]});
+  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,MODEL_AUTO_REFRESH:"false",PORT:"31302",APP_ACCESS_PASSWORD:"browser-test-password",TAVILY_API_KEY:"tvly-test-disabled",TAVILY_FREE_TIER_CONFIRMED:"false"},stdio:["ignore","pipe","pipe"]});
   let browser;
   try{
     await once(server.stdout,"data");

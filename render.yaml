@@ -7,6 +7,10 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
+      - key: MODEL_AUTO_REFRESH
+        value: "true"
+      - key: MODEL_REFRESH_INTERVAL_HOURS
+        value: "6"
       - key: OPENROUTER_API_KEY
         sync: false
       - key: GROQ_API_KEY

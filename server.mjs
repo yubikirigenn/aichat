@@ -4,19 +4,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { createDetachedChat } from "./detached-chat.mjs";
+import { createAutoModelCatalog, modelRefreshInterval } from "./model-refresh.mjs";
 import { normalizeSearchOptions, runSearch, normalizeSearchQueries, runSearchBatch } from "./search.mjs";
 import { createXPostReader, parseXPostUrl } from "./x-post.mjs";
 import { createXSearcher, normalizeXSearch } from "./x-search.mjs";
 import { readWebPage } from "./web-reader.mjs";
 import { createTavilySearcher } from "./tavily-search.mjs";
 import {
-  DEFAULT_MODEL,
-  DEFAULT_MODEL_KEY,
-  MODEL_CATALOG,
   PROVIDERS,
-  findModel,
   providerFor,
 } from "./models.mjs";
+
+const automaticModels=createAutoModelCatalog({enabled:process.env.MODEL_AUTO_REFRESH!=="false",intervalMs:modelRefreshInterval(process.env.MODEL_REFRESH_INTERVAL_HOURS)});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,7 +85,8 @@ function authorizeRequest(req) {
 }
 
 function requestedModel(body = {}) {
-  return findModel(body.provider || DEFAULT_MODEL.provider, body.model || DEFAULT_MODEL.id);
+  const fallback=automaticModels.defaultModel();
+  return automaticModels.find(body.provider || fallback.provider, body.model || fallback.id);
 }
 
 function providerAccess(providerId) {
@@ -274,16 +274,19 @@ app.get("/api/health", (_req, res) => {
     configuredProviders: Object.values(PROVIDERS)
       .filter((provider) => normalizeApiKey(process.env[provider.keyEnv]))
       .map((provider) => provider.id),
-    provider: DEFAULT_MODEL.provider,
-    model: DEFAULT_MODEL.id,
+    provider: automaticModels.defaultModel().provider,
+    model: automaticModels.defaultModel().id,
     service: "Nemotron Workspace",
   });
 });
 
 app.get("/api/models", (_req, res) => {
+  void automaticModels.refreshIfDue();
+  const currentDefault=automaticModels.defaultModel();res.setHeader("Cache-Control","no-store");
   res.json({
     webSearch: { provider: normalizeApiKey(process.env.TAVILY_API_KEY) ? "tavily" : "legacy" },
-    default: { provider: DEFAULT_MODEL.provider, model: DEFAULT_MODEL.id, key: DEFAULT_MODEL_KEY },
+    default: { provider: currentDefault.provider, model: currentDefault.id, key: currentDefault.key },
+    refresh: automaticModels.status(),
     providers: Object.values(PROVIDERS).map((provider) => ({
       id: provider.id,
       label: provider.label,
@@ -291,7 +294,7 @@ app.get("/api/models", (_req, res) => {
       docsUrl: provider.docsUrl,
       configured: Boolean(normalizeApiKey(process.env[provider.keyEnv])),
     })),
-    models: MODEL_CATALOG.map((entry) => ({
+    models: automaticModels.models().map((entry) => ({
       ...entry,
       providerLabel: PROVIDERS[entry.provider].label,
       configured: Boolean(normalizeApiKey(process.env[PROVIDERS[entry.provider].keyEnv])),
@@ -432,7 +435,7 @@ app.post("/api/key-check", async (req, res) => {
   const auth = authorizeRequest(req);
   if (!auth.ok) return sendAuthError(res, auth);
 
-  const selected = requestedModel(req.body) || DEFAULT_MODEL;
+  const selected = requestedModel(req.body) || automaticModels.defaultModel();
   const access = providerAccess(selected.provider);
   if (!access.ok) return sendAuthError(res, access);
   const check = await diagnosticRequest(selected.provider, providerCheckEndpoint(selected.provider), access.apiKey, { method: "GET" });
@@ -445,7 +448,7 @@ app.post("/api/key-check", async (req, res) => {
 
 app.post("/api/diagnostics", async (req, res) => {
   const auth = authorizeRequest(req);
-  const selected = requestedModel(req.body) || DEFAULT_MODEL;
+  const selected = requestedModel(req.body) || automaticModels.defaultModel();
   if (!auth.ok) {
     return res.json({
       ok: false,
@@ -995,10 +998,11 @@ app.use((error, _req, res, _next) => {
 
 const httpServer = app.listen(port, () => {
   console.log(`Nemotron Workspace listening on port ${port}`);
+  automaticModels.start();
 });
 // Keep the backend connection alive long enough for Render's reverse proxy.
 httpServer.keepAliveTimeout = 120000;
 httpServer.headersTimeout = 125000;
 let shuttingDown=false;
-async function shutdown(){if(shuttingDown)return;shuttingDown=true;httpServer.close();httpServer.closeIdleConnections?.();await detachedChat.close();process.exit(0)}
+async function shutdown(){if(shuttingDown)return;shuttingDown=true;automaticModels.close();httpServer.close();httpServer.closeIdleConnections?.();await detachedChat.close();process.exit(0)}
 process.once("SIGTERM",()=>{void shutdown()});process.once("SIGINT",()=>{void shutdown()});
